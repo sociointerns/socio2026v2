@@ -10,6 +10,19 @@ import toast from "react-hot-toast";
 import { useDebounce } from "@/lib/hooks/useDebounce";
 import DateTimePickerAdmin from "../_components/DateTimePickerAdmin";
 import dynamic from "next/dynamic";
+import {
+  LayoutDashboard,
+  Users,
+  CalendarDays,
+  Trophy,
+  Bell,
+  BarChart2,
+  Settings,
+  UserCog,
+  Eye,
+  ChevronRight,
+} from "lucide-react";
+import AdminDashboardView from "../_components/Admin/AdminDashboardView";
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/api\/?$/, "");
 const ITEMS_PER_PAGE = 20;
@@ -100,7 +113,7 @@ const ACCREDITATION_BODIES = [
 export default function MasterAdminPage() {
   const { userData, isMasterAdmin, isLoading: authLoading, session } = useAuth();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"dashboard" | "users" | "events" | "fests" | "notifications" | "report">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "users" | "events" | "fests" | "notifications" | "report" | "settings">("dashboard");
   const authToken = session?.access_token || null;
 
   // Helper to get a fresh access token (avoids stale token from session state)
@@ -742,197 +755,120 @@ export default function MasterAdminPage() {
     return null;
   }
 
+  // ── Sidebar nav config ──
+  const sidebarNav = [
+    { id: "dashboard" as const, label: "Dashboard", icon: <LayoutDashboard className="w-4 h-4" /> },
+    { id: "users" as const, label: "Users", icon: <Users className="w-4 h-4" />, count: users.length },
+    { id: "events" as const, label: "Events", icon: <CalendarDays className="w-4 h-4" />, count: events.length },
+    { id: "fests" as const, label: "Fests", icon: <Trophy className="w-4 h-4" />, count: fests.length },
+    { id: "notifications" as const, label: "Notifications", icon: <Bell className="w-4 h-4" /> },
+    { id: "report" as const, label: "Reports", icon: <BarChart2 className="w-4 h-4" /> },
+    { id: "settings" as const, label: "Settings", icon: <Settings className="w-4 h-4" /> },
+  ];
+
+  const managementNav = [
+    { id: "users" as const, label: "Manage Users", icon: <UserCog className="w-4 h-4" />, href: undefined },
+    { label: "Organiser View", icon: <Eye className="w-4 h-4" />, href: "/manage" },
+  ];
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto px-4 py-8 max-w-7xl">
-        {/* Header */}
-        <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">
-              Admin Panel
-            </h1>
-            <p className="text-sm text-gray-500 mt-1">
-              {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <a
-              href="/create/fest"
-              className="inline-flex items-center gap-2 bg-[#154CB3] text-white px-4 py-2 rounded-full text-sm font-medium hover:bg-[#154cb3eb] hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98] transition-all"
-              title="Fest = group of related events"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-              Create fest
-            </a>
-            <a
-              href="/create/event"
-              className="inline-flex items-center gap-2 bg-[#154CB3] text-white px-4 py-2 rounded-full text-sm font-medium hover:bg-[#154cb3eb] hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98] transition-all"
-              title="Event = single activity users register for"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-              Create event
-            </a>
-          </div>
-        </div>
+    <div className="flex h-[calc(100vh-64px)] overflow-hidden">
 
-        <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className="group bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
-            <div className="flex items-start gap-3">
-              <span className="mt-0.5 inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#154CB3]/10 text-[#154CB3]">
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7h18M5 7l1 12h12l1-12M9 11v6m6-6v6" /></svg>
-              </span>
-              <div>
-                <p className="text-sm font-semibold text-gray-900">Fest</p>
-                <p className="text-sm text-gray-600">A themed collection that groups multiple related events.</p>
-              </div>
-            </div>
-          </div>
-          <div className="group bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
-            <div className="flex items-start gap-3">
-              <span className="mt-0.5 inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#154CB3]/10 text-[#154CB3]">
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10m-12 9h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v11a2 2 0 002 2z" /></svg>
-              </span>
-              <div>
-                <p className="text-sm font-semibold text-gray-900">Event</p>
-                <p className="text-sm text-gray-600">A single session or activity that users can register for.</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Tabs */}
-        <div className="bg-white rounded-lg shadow-sm mb-6 border border-gray-200">
-          <div className="flex border-b border-gray-200 overflow-x-auto">
-            {[
-              { id: "dashboard", label: "Dashboard" },
-              { id: "users", label: "Users", count: users.length },
-              { id: "events", label: "Events", count: events.length },
-              { id: "fests", label: "Fests", count: fests.length },
-              { id: "notifications", label: "Notifications" },
-              { id: "report", label: "Report" }
-            ].map((tab) => (
+      {/* ── Sidebar ───────────────────────────────────────────────────────── */}
+      <aside className="w-56 flex-shrink-0 bg-white border-r border-slate-200 flex flex-col">
+        <nav className="flex-1 px-3 py-4 space-y-0.5">
+          {sidebarNav.map((item) => {
+            const isActive = activeTab === item.id;
+            return (
               <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`px-5 py-3 font-medium transition-all whitespace-nowrap text-sm ${
-                  activeTab === tab.id
-                    ? "border-b-2 border-[#154CB3] text-[#154CB3]"
-                    : "text-gray-500 hover:text-gray-800 hover:bg-gray-50"
+                key={item.id}
+                onClick={() => setActiveTab(item.id)}
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-all relative group ${
+                  isActive
+                    ? "bg-blue-50 text-[#154cb3] font-semibold"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
                 }`}
               >
-                {tab.label}
-                {"count" in tab && tab.count !== undefined && tab.count > 0 && (
-                  <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${
-                    activeTab === tab.id ? "bg-[#154CB3]/10 text-[#154CB3]" : "bg-gray-100 text-gray-500"
-                  }`}>
-                    {tab.count}
-                  </span>
+                {isActive && (
+                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-[#154cb3] rounded-r-full" />
+                )}
+                <span className={isActive ? "text-[#154cb3]" : "text-slate-400 group-hover:text-slate-600"}>
+                  {item.icon}
+                </span>
+                <span className="flex-1 text-left">{item.label}</span>
+                {"count" in item && item.count !== undefined && item.count > 0 && (
+                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                    isActive ? "bg-[#154cb3]/10 text-[#154cb3]" : "bg-slate-100 text-slate-500"
+                  }`}>{item.count}</span>
                 )}
               </button>
-            ))}
-          </div>
+            );
+          })}
+        </nav>
+
+        {/* Management section */}
+        <div className="px-3 pb-4">
+          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-3 mb-1.5">Management</p>
+          {managementNav.map((item, i) => {
+            const content = (
+              <span className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-all font-medium">
+                <span className="text-slate-400">{item.icon}</span>
+                {item.label}
+              </span>
+            );
+            if (item.href) {
+              return <Link key={i} href={item.href}>{content}</Link>;
+            }
+            return (
+              <button key={i} onClick={() => item.id && setActiveTab(item.id as any)} className="w-full text-left">
+                {content}
+              </button>
+            );
+          })}
         </div>
+      </aside>
+
+      {/* ── Main Content ──────────────────────────────────────────────────── */}
+      <main className="flex-1 overflow-y-auto bg-slate-50">
 
         {/* Dashboard Tab */}
         {activeTab === "dashboard" && (
-          <div>
+          <div className="w-full">
             {isLoading ? (
               <div className="p-12 text-center">
-                <div className="w-12 h-12 border-4 border-[#154CB3] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                <div className="w-12 h-12 border-4 border-[#154CB3] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
                 <div className="text-gray-600">Loading analytics...</div>
               </div>
             ) : (
-              <div className="space-y-6">
-                <AnalyticsDashboard
-                  users={users}
-                  events={events}
-                  fests={fests}
-                  registrations={registrations}
-                />
-
-                {/* Bottom row: Activity + Quick Actions */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Recent Activity */}
-                  <div className="bg-white border border-gray-200 rounded-lg p-5">
-                    <h3 className="text-sm font-semibold text-gray-900 mb-4">Recent Activity</h3>
-                    <div className="space-y-1 max-h-64 overflow-y-auto">
-                      {(() => {
-                        type ActivityItem = { text: string; time: Date };
-                        const activities: ActivityItem[] = [];
-
-                        events.slice().sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 4).forEach(e => {
-                          activities.push({ text: `"${e.title}" created`, time: new Date(e.created_at) });
-                        });
-
-                        registrations.slice().sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 4).forEach(r => {
-                          const event = events.find(e => e.event_id === r.event_id);
-                          activities.push({ text: `Registration for "${event?.title || '...'}"`, time: new Date(r.created_at) });
-                        });
-
-                        users.slice().sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 3).forEach(u => {
-                          activities.push({ text: `${u.name || u.email} joined`, time: new Date(u.created_at) });
-                        });
-
-                        activities.sort((a, b) => b.time.getTime() - a.time.getTime());
-
-                        if (activities.length === 0) {
-                          return <div className="text-center py-4 text-gray-400 text-sm">No recent activity</div>;
-                        }
-
-                        return activities.slice(0, 8).map((activity, idx) => {
-                          const now = new Date();
-                          const diff = now.getTime() - activity.time.getTime();
-                          const mins = Math.floor(diff / 60000);
-                          const hours = Math.floor(diff / 3600000);
-                          const days = Math.floor(diff / 86400000);
-                          const timeAgo = mins < 1 ? "now" : mins < 60 ? `${mins}m` : hours < 24 ? `${hours}h` : `${days}d`;
-
-                          return (
-                            <div key={idx} className="flex items-center justify-between py-2 px-1 rounded hover:bg-gray-50">
-                              <span className="text-sm text-gray-700">{activity.text}</span>
-                              <span className="text-xs text-gray-400 ml-3 whitespace-nowrap">{timeAgo}</span>
-                            </div>
-                          );
-                        });
-                      })()}
-                    </div>
-                  </div>
-
-                  {/* Quick Actions */}
-                  <div className="bg-white border border-gray-200 rounded-lg p-5">
-                    <h3 className="text-sm font-semibold text-gray-900 mb-4">Quick Actions</h3>
-                    <div className="space-y-1">
-                      {[
-                        { tab: "users", title: "Manage Users" },
-                        { tab: "events", title: "Manage Events" },
-                        { tab: "fests", title: "Manage Fests" },
-                        { tab: "notifications", title: "Send Notification" }
-                      ].map((action, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => setActiveTab(action.tab as any)}
-                          className="w-full flex items-center justify-between py-2.5 px-2 rounded-lg hover:bg-gray-50 transition-colors text-left text-sm text-gray-700"
-                        >
-                          {action.title}
-                          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                        </button>
-                      ))}
-                      <div className="pt-2 mt-2 border-t border-gray-100">
-                        <a
-                          href="/manage"
-                          className="w-full flex items-center justify-between py-2.5 px-2 rounded-lg hover:bg-gray-50 transition-colors text-left text-sm text-gray-500"
-                        >
-                          Organiser View
-                          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                        </a>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <AdminDashboardView
+                users={users}
+                events={events}
+                fests={fests}
+                registrations={registrations}
+              />
             )}
           </div>
         )}
+
+        {/* Non-dashboard tabs get padding wrapper */}
+        {activeTab !== "dashboard" && (
+          <div className="p-6 space-y-6">
+        {/* Settings placeholder */}
+        {activeTab === "settings" && (
+          <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-400">
+            <Settings className="w-10 h-10 mx-auto mb-3 text-slate-300" />
+            <p className="font-medium text-slate-600">Settings</p>
+            <p className="text-sm mt-1">Platform configuration coming soon.</p>
+          </div>
+        )}
+
+
+
+
+
+
+
+
 
         {/* User Management Tab */}
         {activeTab === "users" && (
@@ -1936,7 +1872,9 @@ export default function MasterAdminPage() {
             </div>
           </div>
         )}
-      </div>
+          </div>
+        )}
+      </main>
     </div>
   );
 }
