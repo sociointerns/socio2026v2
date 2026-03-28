@@ -12,6 +12,7 @@ import Link from "next/link";
 import { getFests } from "@/lib/api";
 import { createBrowserClient } from "@supabase/ssr";
 import { toast } from "sonner";
+import AnimatedListDropdown from "@/app/_components/UI/AnimatedListDropdown";
 import {
   Search,
   SlidersHorizontal,
@@ -519,14 +520,17 @@ export default function ManageDashboard() {
               <button className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors shadow-sm text-sm font-semibold">
                 <SlidersHorizontal className="w-4 h-4 text-slate-500" /> Filter
               </button>
-              <select
+              <AnimatedListDropdown
                 value={campusFilter}
-                onChange={(e) => setCampusFilter(e.target.value)}
-                className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors shadow-sm text-sm font-semibold outline-none focus:ring-2 focus:ring-[#154cb3]/20"
-              >
-                <option value="all">All Campuses</option>
-                {CAMPUSES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+                onChange={setCampusFilter}
+                options={[
+                  { value: "all", label: "All Campuses" },
+                  ...CAMPUSES.map((campus) => ({ value: campus, label: campus })),
+                ]}
+                placeholder="All Campuses"
+                className="w-full sm:w-64"
+                triggerClassName="shadow-sm font-semibold border-slate-200"
+              />
             </div>
           )}
         </div>
@@ -596,16 +600,19 @@ export default function ManageDashboard() {
                   <div className="bg-slate-100/50 border border-slate-200 rounded-xl p-6">
                     <h2 className="text-sm font-bold text-slate-800 mb-1">Select Fest Context</h2>
                     <p className="text-xs text-slate-500 mb-4">Choose a fest to generate a comprehensive report of all its combined events.</p>
-                    <select
+                    <AnimatedListDropdown
                       value={selectedReportFest}
-                      onChange={(e) => { setSelectedReportFest(e.target.value); setSelectedEventIds(new Set()); }}
-                      className="w-full md:w-1/2 px-3 py-2 border border-slate-300 rounded-lg bg-white text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#154cb3]/30"
-                    >
-                      <option value="">-- Dropdown Selection --</option>
-                      {fests.map((fest) => (
-                        <option key={fest.fest_id} value={fest.fest_id}>{fest.fest_title}</option>
-                      ))}
-                    </select>
+                      onChange={(nextValue) => {
+                        setSelectedReportFest(nextValue);
+                        setSelectedEventIds(new Set());
+                      }}
+                      options={[
+                        { value: "", label: "-- Dropdown Selection --" },
+                        ...fests.map((fest) => ({ value: fest.fest_id, label: fest.fest_title })),
+                      ]}
+                      placeholder="-- Dropdown Selection --"
+                      className="w-full md:w-1/2"
+                    />
                   </div>
 
                   {selectedReportFest && (() => {
@@ -720,16 +727,19 @@ export default function ManageDashboard() {
                 <div className="bg-slate-100/50 border border-slate-200 rounded-xl p-6">
                   <h2 className="text-sm font-bold text-slate-800 mb-1">Accreditation Template Standard</h2>
                   <p className="text-xs text-slate-500 mb-4">This defines the formal schema embedded inside the exported document.</p>
-                  <select
+                  <AnimatedListDropdown
                     value={selectedAccreditation}
-                    onChange={(e) => setSelectedAccreditation(e.target.value)}
-                    className="w-full md:w-1/2 px-3 py-2 border border-slate-300 rounded-lg bg-white text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#154cb3]/30"
-                  >
-                    <option value="">-- Blank Document / Custom --</option>
-                    {ACCREDITATION_BODIES.map((body) => (
-                      <option key={body.id} value={body.id}>{body.name} Formats - {body.fullName}</option>
-                    ))}
-                  </select>
+                    onChange={setSelectedAccreditation}
+                    options={[
+                      { value: "", label: "-- Blank Document / Custom --" },
+                      ...ACCREDITATION_BODIES.map((body) => ({
+                        value: body.id,
+                        label: `${body.name} Formats - ${body.fullName}`,
+                      })),
+                    ]}
+                    placeholder="-- Blank Document / Custom --"
+                    className="w-full md:w-1/2"
+                  />
                 </div>
               )}
 
