@@ -223,6 +223,8 @@ export default function ManageDashboard() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [isStatusFilterOpen, setIsStatusFilterOpen] = useState(false);
   const statusFilterRef = useRef<HTMLDivElement>(null);
+  const topOfPageRef = useRef<HTMLDivElement>(null);
+  const previousPagesRef = useRef({ eventsPage: 1, festsPage: 1 });
   
   // Auth Context & Session
   const [authToken, setAuthToken] = useState<string | null>(null);
@@ -352,8 +354,27 @@ export default function ManageDashboard() {
   const paginatedEvents = paginateArray(searchedUserEvents, eventsPage);
 
   const scrollToTop = () => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    const performScroll = () => {
+      topOfPageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      document.documentElement.scrollTo({ top: 0, behavior: "smooth" });
+      document.body.scrollTo({ top: 0, behavior: "smooth" });
+    };
+
+    requestAnimationFrame(performScroll);
+    setTimeout(performScroll, 0);
   };
+
+  useEffect(() => {
+    const prev = previousPagesRef.current;
+    const pageChanged = prev.eventsPage !== eventsPage || prev.festsPage !== festsPage;
+
+    if (pageChanged) {
+      scrollToTop();
+    }
+
+    previousPagesRef.current = { eventsPage, festsPage };
+  }, [eventsPage, festsPage]);
 
   
   // ─── REPORT GENERATION HANDLER ────────────────────────
@@ -494,6 +515,7 @@ export default function ManageDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans">
+      <div ref={topOfPageRef} />
       <main className="max-w-7xl mx-auto px-4 py-8">
         {/* 1. Page Header & Primary Actions */}
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-8">
