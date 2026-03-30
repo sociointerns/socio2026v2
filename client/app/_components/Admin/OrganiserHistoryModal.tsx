@@ -14,7 +14,6 @@ type OrganiserEvent = {
   organizing_dept?: string | null;
   created_by: string;
   created_at: string;
-  registration_count?: number | null;
 };
 
 type OrganiserRegistration = {
@@ -166,7 +165,7 @@ export default function OrganiserHistoryModal({
       const { data, error: fetchError } = await supabase
         .from("events")
         .select(
-          "event_id, title, event_date, fest, organizing_dept, created_by, created_at, registration_count"
+          "event_id, title, event_date, fest, organizing_dept, created_by, created_at"
         )
         .eq("created_by", identifier)
         .order("created_at", { ascending: false });
@@ -321,6 +320,20 @@ export default function OrganiserHistoryModal({
     return new Map(events.map((event) => [event.event_id, event]));
   }, [events]);
 
+  const registrationCountByEvent = useMemo(() => {
+    const countMap = new Map<string, number>();
+
+    registrations.forEach((registration) => {
+      if (!registration.event_id) return;
+      countMap.set(
+        registration.event_id,
+        (countMap.get(registration.event_id) || 0) + 1
+      );
+    });
+
+    return countMap;
+  }, [registrations]);
+
   const registrationsByEvent = useMemo(() => {
     const grouped = new Map<
       string,
@@ -469,6 +482,7 @@ export default function OrganiserHistoryModal({
             <div className="space-y-3">
               {events.map((event) => {
                 const status = getEventStatus(event.event_date);
+                const eventRegistrationCount = registrationCountByEvent.get(event.event_id) || 0;
                 return (
                   <div
                     key={`${event.event_id}-${event.created_at}`}
@@ -503,12 +517,10 @@ export default function OrganiserHistoryModal({
                         <Building2 className="h-3 w-3" />
                         {event.organizing_dept || "No Department"}
                       </span>
-                      {typeof event.registration_count === "number" && (
-                        <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] text-slate-600">
-                          <ClipboardList className="h-3 w-3" />
-                          {event.registration_count} registrations
-                        </span>
-                      )}
+                      <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] text-slate-600">
+                        <ClipboardList className="h-3 w-3" />
+                        {eventRegistrationCount} registrations
+                      </span>
                     </div>
 
                     <div className="mt-3">
