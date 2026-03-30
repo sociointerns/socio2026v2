@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "../../context/AuthContext"; // Adjust path as needed
 import { departments as baseDepartments, christCampuses } from "../lib/eventFormSchema";
 import { createBrowserClient } from "@supabase/ssr";
@@ -724,6 +724,7 @@ function CreateFestForm(props?: CreateFestProps) {
   }, []);
 
   const pathname = usePathname();
+  const router = useRouter();
   const isEditModeFromPath = pathname.startsWith("/edit/fest");
   const festIdFromPath = isEditModeFromPath ? pathname.split("/").pop() : null;
 
@@ -827,7 +828,7 @@ function CreateFestForm(props?: CreateFestProps) {
         const errorData = await response.json();
         throw new Error(errorData.error || "Failed to delete fest");
       }
-      window.location.href = "/manage";
+      router.replace("/manage");
     } catch (error: any) {
       setErrors({ submit: error.message || "Failed to delete fest." });
       setIsNavigating(false);
@@ -1221,8 +1222,8 @@ function CreateFestForm(props?: CreateFestProps) {
           `Fest updated successfully! The fest link has changed from /fest/${oldId} to /fest/${newId}`,
           { duration: 5000 }
         );
-        
-        window.location.href = `/edit/fest/${newId}`;
+
+        router.replace(`/edit/fest/${newId}`);
         return;
       } else if (isEditMode) {
         // Show regular success message for edit
@@ -1411,7 +1412,7 @@ function CreateFestForm(props?: CreateFestProps) {
                     setFestModalVisible(false);
                     setTimeout(() => {
                       setIsModalOpen(false);
-                      window.location.href = "/create/event";
+                      router.replace("/create/event");
                     }, 300);
                   }}
                 >
@@ -1426,7 +1427,7 @@ function CreateFestForm(props?: CreateFestProps) {
                   setFestModalVisible(false);
                   setTimeout(() => {
                     setIsModalOpen(false);
-                    window.location.href = "/manage";
+                    router.replace("/manage");
                   }, 300);
                 }}
               >

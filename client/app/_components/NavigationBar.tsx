@@ -7,6 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import { NotificationSystem } from "./NotificationSystem";
 import TermsConsentModal from "./TermsConsentModal";
 import { useState, useEffect, useCallback, memo } from "react";
+import { useRouter } from "next/navigation";
 
 // OPTIMIZATION: Move static data outside component to prevent recreation on every render
 const navigationLinks = [
@@ -45,6 +46,7 @@ const navigationLinks = [
 
 function NavigationBar() {
   const { session, userData, isLoading, signInWithGoogle, signOut } = useAuth();
+  const router = useRouter();
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isSigningIn, setIsSigningIn] = useState(false);
@@ -88,9 +90,9 @@ function NavigationBar() {
   const handleSearchSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
-      window.location.href = `/events?search=${encodeURIComponent(searchQuery.trim())}`;
+      router.push(`/events?search=${encodeURIComponent(searchQuery.trim())}`);
     }
-  }, [searchQuery]);
+  }, [searchQuery, router]);
 
   const handleDropdownHover = useCallback((linkName: string | null) => {
     setActiveDropdown(linkName);
@@ -99,7 +101,7 @@ function NavigationBar() {
   return (
     <>
  {/* CHANGED FOR EACH DEVICE */}
-      <nav className="w-full flex items-center pt-8 pb-7 px-4 md:px-8 lg:px-12 text-[#154CB3] select-none relative gap-4">
+      <nav className="w-full flex flex-wrap md:flex-nowrap items-center pt-6 pb-4 md:pt-8 md:pb-7 px-4 md:px-8 lg:px-12 text-[#154CB3] select-none relative gap-3 md:gap-4">
         {/* Logo */}
         <div className="flex-shrink-0">
           <Link href={session ? "/Discover" : "/"}>
@@ -151,9 +153,9 @@ function NavigationBar() {
         </div>
 
         {/* Right side - Search Bar and Auth Buttons */}
-<div className="flex items-center gap-2 lg:gap-3 flex-shrink-0 min-w-0">
+<div className="flex items-center gap-2 lg:gap-3 flex-shrink-0 min-w-0 w-full md:w-auto justify-end">
             {/* Search Bar */}
-          <form onSubmit={handleSearchSubmit} className="flex">
+          <form onSubmit={handleSearchSubmit} className="hidden sm:flex">
             <div className="relative">
    <input
   type="text"
@@ -165,6 +167,8 @@ function NavigationBar() {
 />
               <button
                 type="submit"
+                aria-label="Search events"
+                title="Search events"
                 className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-[#154CB3] transition-colors duration-200"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -279,6 +283,53 @@ function NavigationBar() {
           </div>
         </div>
       </nav>
+      <div className="md:hidden px-4 pb-4 space-y-3">
+        <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {navigationLinks.map((link) => (
+            <Link
+              key={`mobile-${link.name}`}
+              href={link.href}
+              className="whitespace-nowrap rounded-full border border-[#154CB3]/20 bg-white px-3 py-1.5 text-sm font-medium text-[#154CB3] hover:bg-[#154CB3]/5"
+            >
+              {link.name}
+            </Link>
+          ))}
+          <Link
+            href="/events"
+            className="whitespace-nowrap rounded-full border border-[#154CB3]/20 bg-white px-3 py-1.5 text-sm font-medium text-[#154CB3] hover:bg-[#154CB3]/5"
+          >
+            Events
+          </Link>
+          <Link
+            href="/fests"
+            className="whitespace-nowrap rounded-full border border-[#154CB3]/20 bg-white px-3 py-1.5 text-sm font-medium text-[#154CB3] hover:bg-[#154CB3]/5"
+          >
+            Fests
+          </Link>
+        </div>
+
+        <form onSubmit={handleSearchSubmit} className="sm:hidden">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search events..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full px-4 py-2.5 text-sm border border-gray-300 rounded-full focus:outline-none focus:border-[#154CB3] focus:ring-1 focus:ring-[#154CB3] transition-all duration-200"
+            />
+            <button
+              type="submit"
+              aria-label="Search events"
+              title="Search events"
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-[#154CB3] transition-colors duration-200"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </button>
+          </div>
+        </form>
+      </div>
       <hr className="border-[#3030304b]" />
       {showTermsModal && (
         <TermsConsentModal
