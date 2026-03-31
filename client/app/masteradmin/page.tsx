@@ -835,9 +835,6 @@ export default function MasterAdminPage() {
           <div className="space-y-6">
             <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
               <h2 className="text-xl font-bold text-gray-900 mb-1">Advanced Analytics Data Explorer</h2>
-              <p className="text-sm text-gray-500 mb-0">
-                PowerBI/Tableau-style relational analytics with global cross-filters, KPI recomputation, dynamic charts, and a dense exportable data grid.
-              </p>
             </div>
             <DataExplorerDashboard />
           </div>
