@@ -245,8 +245,8 @@ function NavigationBar() {
             ))}
           </div>
         </div>
-        {/* Logo */}
-        <div ref={logoRef} className="flex-shrink-0">
+        {/* Left cluster - Logo and Search */}
+        <div ref={logoRef} className="flex items-center gap-3 md:gap-4 flex-shrink-0 min-w-0">
           <Link href={session ? "/Discover" : "/"}>
             <Image
               src={Logo}
@@ -256,6 +256,29 @@ function NavigationBar() {
               className="cursor-pointer z-20 relative"
             />
           </Link>
+
+          {/* Search Bar */}
+          <form onSubmit={handleSearchSubmit} className="hidden sm:flex">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search events..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-32 md:w-36 lg:w-48 xl:w-64 px-4 py-2 text-sm border border-gray-300 rounded-full focus:outline-none focus:border-[#154CB3] focus:ring-1 focus:ring-[#154CB3]"
+              />
+              <button
+                type="submit"
+                aria-label="Search events"
+                title="Search events"
+                className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-[#154CB3] transition-colors duration-200"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </button>
+            </div>
+          </form>
         </div>
 
         {/* Desktop Navigation Links - Centered */}
@@ -297,30 +320,6 @@ function NavigationBar() {
 
         {/* Right side - Search Bar and Auth Buttons */}
 <div ref={rightControlsRef} className="md:ml-auto flex items-center gap-2 lg:gap-3 flex-shrink-0 min-w-0 w-full md:w-auto justify-end">
-            {/* Search Bar */}
-          <form onSubmit={handleSearchSubmit} className="hidden sm:flex">
-            <div className="relative">
-   <input
-  type="text"
-  placeholder="Search events..."
-  value={searchQuery}
-  onChange={(e) => setSearchQuery(e.target.value)}
-  // CHANGED FOR EACH DEVICE
-  className="w-32 md:w-36 lg:w-48 xl:w-64 px-4 py-2 text-sm border border-gray-300 rounded-full focus:outline-none focus:border-[#154CB3] focus:ring-1 focus:ring-[#154CB3] transition-all duration-200"
-/>
-              <button
-                type="submit"
-                aria-label="Search events"
-                title="Search events"
-                className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-[#154CB3] transition-colors duration-200"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </button>
-            </div>
-          </form>
-
           {isDesktopCompact && (
             <button
               type="button"
