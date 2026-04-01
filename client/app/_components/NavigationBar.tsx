@@ -336,7 +336,7 @@ function NavigationBar() {
           )}
 
           {/* Auth Buttons */}
-          <div className="flex gap-2 sm:gap-3 items-center flex-wrap justify-end">
+          <div className="ml-auto flex gap-2 sm:gap-3 items-center md:flex-nowrap justify-end">
             {isLoading && !session ? (
               <div className="flex items-center gap-2">
                 <div className="h-9 w-20 rounded-full bg-gray-200 animate-pulse" />
@@ -344,16 +344,16 @@ function NavigationBar() {
               </div>
             ) : session ? (
               userData && (userData.is_organiser || (userData as any).is_masteradmin) ? (
-                <div className="flex gap-2 sm:gap-4 items-center flex-wrap justify-end">
+                <div className="flex gap-2 sm:gap-4 items-center md:flex-nowrap justify-end">
                   <NotificationSystem />
-                  {(userData as any).is_masteradmin && (
+                  {!isDesktopCompact && (userData as any).is_masteradmin && (
                     <Link href="/masteradmin">
                       <button className="cursor-pointer font-semibold px-3 py-1.5 sm:px-4 sm:py-2 border-2 rounded-full text-xs sm:text-sm hover:bg-red-50 border-red-600 text-red-600 transition-all duration-200 ease-in-out">
                         Admin Panel
                       </button>
                     </Link>
                   )}
-                  {userData.is_organiser && (
+                  {!isDesktopCompact && userData.is_organiser && (
                     <Link href="/manage">
                       <button className="cursor-pointer font-semibold px-3 py-1.5 sm:px-4 sm:py-2 border-2 rounded-full text-xs sm:text-sm hover:bg-[#f3f3f3] transition-all duration-200 ease-in-out">
                         Manage events
@@ -382,7 +382,7 @@ function NavigationBar() {
                   </Link>
                 </div>
               ) : (
-                <div className="flex gap-2 sm:gap-4 items-center flex-wrap justify-end">
+                <div className="flex gap-2 sm:gap-4 items-center md:flex-nowrap justify-end">
                   {userData && <NotificationSystem />}
                   <Link href="/profile">
   <div className="flex items-center gap-2 lg:gap-4 min-w-0">
