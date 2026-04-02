@@ -32,6 +32,8 @@ export default function EditEventPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isArchived, setIsArchived] = useState(false);
+  const [isArchiveUpdating, setIsArchiveUpdating] = useState(false);
 
   useEffect(() => {
     if (authIsLoading) return;
@@ -235,6 +237,17 @@ export default function EditEventPage() {
           };
 
           setInitialData(transformedData);
+          const manualArchived =
+            data.is_archived === true ||
+            data.is_archived === 1 ||
+            data.is_archived === "1" ||
+            data.is_archived === "true";
+          const effectiveArchived =
+            data.archived_effective === true ||
+            data.archived_effective === 1 ||
+            data.archived_effective === "1" ||
+            data.archived_effective === "true";
+          setIsArchived(Boolean(manualArchived || effectiveArchived));
           setExistingImageFileUrl(data.event_image_url || null);
           setExistingBannerFileUrl(data.banner_url || null);
           setExistingPdfFileUrl(data.pdf_url || null);
@@ -265,6 +278,44 @@ export default function EditEventPage() {
 
     fetchEventData();
   }, [eventIdSlug, session, userData, authIsLoading, router]); // Added router to dependencies if used inside
+
+  const handleToggleArchive = async () => {
+    if (!session?.access_token) {
+      toast.error("Please log in again to update archive status.");
+      return;
+    }
+
+    setIsArchiveUpdating(true);
+    try {
+      const response = await fetch(`${API_URL}/api/events/${eventIdSlug}/archive`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ archive: !isArchived }),
+      });
+
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error || "Failed to update archive status.");
+      }
+
+      const archivedValue =
+        payload?.event?.is_archived === true ||
+        payload?.event?.is_archived === 1 ||
+        payload?.event?.is_archived === "1" ||
+        payload?.event?.is_archived === "true";
+
+      setIsArchived(archivedValue);
+      toast.success(archivedValue ? "Event archived successfully." : "Event moved back to active list.");
+    } catch (error: any) {
+      console.error("Archive toggle failed:", error);
+      toast.error(error?.message || "Unable to update archive status.");
+    } finally {
+      setIsArchiveUpdating(false);
+    }
+  };
 
   const handleUpdateEvent: SubmitHandler<EventFormData> = async (formData) => {
     if (!session) {
@@ -510,6 +561,28 @@ export default function EditEventPage() {
     userData &&
     (userData.is_organiser || (userData as any).is_admin) ? (
     <>
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 md:px-12 pt-4">
+        <div className="mb-3 p-3 border border-slate-200 rounded-lg bg-white flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+          <p className="text-sm font-semibold text-slate-700">
+            Event Editor
+          </p>
+          <button
+            type="button"
+            onClick={handleToggleArchive}
+            disabled={isArchiveUpdating || isSubmitting}
+            className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${
+              isArchiveUpdating || isSubmitting
+                ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                : isArchived
+                  ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                  : "bg-amber-100 text-amber-800 hover:bg-amber-200"
+            }`}
+          >
+            {isArchiveUpdating ? "Saving..." : isArchived ? "Unarchive Event" : "Archive Event"}
+          </button>
+        </div>
+      </div>
+
       {errorMessage && !isSubmitting && (
         <div className="max-w-4xl mx-auto px-4 sm:px-6 md:px-12 pt-4">
           <div className="p-4 my-2 text-sm text-red-700 bg-red-100 border border-red-400 rounded text-center">

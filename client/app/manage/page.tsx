@@ -29,6 +29,7 @@ import {
   ChevronRight,
   ChevronDown,
   History,
+  Pencil,
 } from "lucide-react";
 
 // ─── TYPES & CONSTANTS ──────────────────────────────────────────────────────
@@ -254,7 +255,7 @@ const MappedEventCard = ({
             {isArchiveActionLoading ? "Saving..." : isArchived ? "Unarchive" : "Archive"} <History className="w-4 h-4" />
           </button>
           <Link href={`/${baseUrl}/${event.event_id}`} className="flex items-center gap-1.5 text-[#154cb3] font-semibold text-sm hover:underline">
-            Manage <ArrowRight className="w-4 h-4" />
+            Edit <Pencil className="w-4 h-4" />
           </Link>
         </div>
       </div>
