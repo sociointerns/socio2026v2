@@ -380,26 +380,40 @@ export default function EditEventPage() {
     // Custom fields
     payload.append("custom_fields", JSON.stringify(formData.customFields || []));
 
-    if (formData.imageFile instanceof File)
-      payload.append("eventImage", formData.imageFile);
-    if (formData.bannerFile instanceof File)
-      payload.append("bannerImage", formData.bannerFile);
-    if (formData.pdfFile instanceof File)
-      payload.append("pdfFile", formData.pdfFile);
+    const appendFile = (key: string, file: any) => {
+      if (!file) return false;
+      
+      if (file instanceof FileList) {
+        if (file.length > 0) {
+          payload.append(key, file[0]);
+          return true;
+        }
+        return false;
+      }
+      
+      if (file instanceof File) {
+        payload.append(key, file);
+        return true;
+      }
+      return false;
+    };
 
-    if (!(formData.imageFile instanceof File) && existingImageFileUrl) {
+    const hasNewImage = appendFile("eventImage", formData.imageFile);
+    if (!hasNewImage && existingImageFileUrl) {
       payload.append("existingImageFileUrl", existingImageFileUrl);
     } else if (formData.imageFile === null && existingImageFileUrl) {
       payload.append("removeImageFile", "true");
     }
 
-    if (!(formData.bannerFile instanceof File) && existingBannerFileUrl) {
+    const hasNewBanner = appendFile("bannerImage", formData.bannerFile);
+    if (!hasNewBanner && existingBannerFileUrl) {
       payload.append("existingBannerFileUrl", existingBannerFileUrl);
     } else if (formData.bannerFile === null && existingBannerFileUrl) {
       payload.append("removeBannerFile", "true");
     }
 
-    if (!(formData.pdfFile instanceof File) && existingPdfFileUrl) {
+    const hasNewPdf = appendFile("pdfFile", formData.pdfFile);
+    if (!hasNewPdf && existingPdfFileUrl) {
       payload.append("existingPdfFileUrl", existingPdfFileUrl);
     } else if (formData.pdfFile === null && existingPdfFileUrl) {
       payload.append("removePdfFile", "true");
