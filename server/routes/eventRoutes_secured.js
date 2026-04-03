@@ -162,6 +162,7 @@ router.get("/", async (req, res) => {
       const archiveState = deriveArchiveState(event);
       return {
         ...event,
+        fest: event.fest_id || null, // Map fest_id to fest for frontend compatibility
         department_access: normalizeJsonField(event.department_access),
         rules: normalizeJsonField(event.rules),
         schedule: normalizeJsonField(event.schedule),
@@ -291,6 +292,7 @@ router.get("/:eventId", async (req, res) => {
     const archiveState = deriveArchiveState(event);
     const processedEvent = {
       ...event,
+      fest: event.fest_id || null, // Map fest_id to fest for frontend compatibility
       department_access: normalizeJsonField(event.department_access),
       rules: normalizeJsonField(event.rules),
       schedule: normalizeJsonField(event.schedule),
@@ -633,6 +635,7 @@ router.patch(
         message: archiveValue ? "Event archived successfully." : "Event moved back to active list.",
         event: {
           ...updatedEvent,
+          fest: updatedEvent.fest_id || null, // Map fest_id to fest for frontend compatibility
           ...archiveState,
         },
       });

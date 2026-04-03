@@ -30,6 +30,7 @@ router.get("/", async (req, res) => {
 
     const processedEvents = (events || []).map((event) => ({
       ...event,
+      fest: event.fest_id || null, // Map fest_id to fest for frontend compatibility
       department_access: Array.isArray(event.department_access)
         ? event.department_access
         : parseJsonField(event.department_access, []),
@@ -75,6 +76,7 @@ router.get("/:eventId", async (req, res) => {
     // Parse JSON fields
     const processedEvent = {
       ...event,
+      fest: event.fest_id || null, // Map fest_id to fest for frontend compatibility
       department_access: Array.isArray(event.department_access)
         ? event.department_access
         : parseJsonField(event.department_access, []),
