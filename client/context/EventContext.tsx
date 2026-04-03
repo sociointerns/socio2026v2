@@ -14,6 +14,7 @@ export interface EventForCard {
   image: string;
   organizing_dept: string;
   allow_outsiders?: boolean | null;
+  is_archived?: boolean | null;
 }
 
 export interface CarouselDisplayImage {
@@ -205,6 +206,7 @@ const toEventCard = (event: FetchedEvent): EventForCard => {
       "https://placehold.co/400x250/e2e8f0/64748b?text=Event+Image",
     organizing_dept: event.organizing_dept || "TBD",
     allow_outsiders: event.allow_outsiders ?? false,
+    is_archived: event.is_archived,
   };
 };
 
