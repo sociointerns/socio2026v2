@@ -3,6 +3,7 @@
 import React, { Suspense, useState, useRef, useEffect, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { EventsSection } from "../_components/Discover/EventsSection";
+import { RecommendedEventsSection } from "../_components/Discover/RecommendedEventsSection";
 import { FullWidthCarousel } from "../_components/Discover/ImageCarousel";
 import { FestsSection } from "../_components/Discover/FestSection";
 import { CategorySection } from "../_components/Discover/CategorySection";
@@ -406,6 +407,14 @@ const DiscoverPageContent = () => {
             type="centre"
             linkUrl="/clubs"
             showAll={true}
+          />
+        </section>
+
+        {/* Recommended Events Section */}
+        <section className="mb-12">
+          <RecommendedEventsSection
+            allEvents={filteredEvents}
+            selectedCampus={selectedCampus}
           />
         </section>
 

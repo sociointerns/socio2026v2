@@ -190,7 +190,7 @@ const deriveTags = (event: FetchedEvent): string[] => {
   return tags.filter((tag) => tag && tag.trim() !== "");
 };
 
-const toEventCard = (event: FetchedEvent): EventForCard => {
+export const toEventCard = (event: FetchedEvent): EventForCard => {
   return {
     id: event.id,
     event_id: event.event_id,

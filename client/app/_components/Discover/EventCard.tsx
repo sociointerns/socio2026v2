@@ -77,6 +77,8 @@ export const EventCard = ({
 
                 if (titleTag === "Trending")
                   bgColor = "bg-[#FFCC00] text-black";
+                if (titleTag === "Recommended")
+                  bgColor = "bg-[#9333ea] text-white"; // Purple background for recommendations
                 if (
                   [
                     "Cultural",
