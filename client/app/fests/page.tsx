@@ -64,10 +64,9 @@ const FestsPageContent = () => {
   const API_URL = process.env.NEXT_PUBLIC_API_URL!.replace(/\/api\/?$/, "");
   
   useEffect(() => {
-    fetch(`${API_URL}/api/fests`)
+    fetch(`${API_URL}/api/fests?status=upcoming&sortBy=opening_date&sortOrder=asc`)
       .then((res) => res.json())
       .then((data) => {
-        // Assuming the API returns { fests: Fest[] }
         if (data && Array.isArray(data.fests)) {
           setAllFests(data.fests);
         } else {

@@ -8,7 +8,7 @@ import { FestsSection } from "../_components/Discover/FestSection";
 import { CategorySection } from "../_components/Discover/CategorySection";
 import { ClubSection } from "../_components/Discover/ClubSection";
 import Footer from "../_components/Home/Footer";
-import { getFests } from "@/lib/api";
+import { getUpcomingFests } from "@/lib/api";
 import { allCentres } from "../lib/centresData";
 import { christCampuses } from "../lib/eventFormSchema";
 import { useAuth } from "@/context/AuthContext";
@@ -84,7 +84,7 @@ const DiscoverPageContent = () => {
       setIsLoadingFests(true);
       setErrorFests(null);
       try {
-        const data = await getFests();
+        const data = await getUpcomingFests();
 
         const mappedFests: Fest[] = Array.isArray(data)
           ? data.map((fest: any) => ({
@@ -104,8 +104,8 @@ const DiscoverPageContent = () => {
 
         const sortedFests = mappedFests.sort(
           (a, b) =>
-            new Date(b.opening_date ?? 0).getTime() -
-            new Date(a.opening_date ?? 0).getTime()
+            new Date(a.opening_date ?? 0).getTime() -
+            new Date(b.opening_date ?? 0).getTime()
         );
         setAllFests(sortedFests);
       } catch (err: any) {

@@ -115,6 +115,47 @@ const deriveTags = (event: FetchedEvent): string[] => {
   return tags.filter((tag) => tag && tag.trim() !== "");
 };
 
+const parseComparableDate = (value: string | null | undefined): Date | null => {
+  if (!value) return null;
+
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (dateOnlyMatch) {
+    const [, year, month, day] = dateOnlyMatch;
+    const parsed = new Date(Number(year), Number(month) - 1, Number(day));
+    parsed.setHours(0, 0, 0, 0);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const getTodayBoundary = (): Date => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+};
+
+const getUpcomingEventsFromDataset = (events: FetchedEvent[]): FetchedEvent[] => {
+  const today = getTodayBoundary();
+
+  return [...(events || [])]
+    .filter((event) => {
+      if (Boolean((event as any).is_archived)) return false;
+      const eventDate = parseComparableDate(event.event_date);
+      if (!eventDate) return false;
+      return eventDate.getTime() >= today.getTime();
+    })
+    .sort((a, b) => {
+      const aDate = parseComparableDate(a.event_date)?.getTime() || 0;
+      const bDate = parseComparableDate(b.event_date)?.getTime() || 0;
+      return aDate - bDate;
+    });
+};
+
 const getRandomEvents = (
   events: FetchedEvent[],
   count: number
@@ -139,6 +180,7 @@ const transformToEventCardData = (event: FetchedEvent): EventForCard => {
       process.env.NEXT_PUBLIC_EVENT_IMAGE_PLACEHOLDER_URL!,
     organizing_dept: event.organizing_dept || "TBD",
     allow_outsiders: event.allow_outsiders ?? false,
+    is_archived: (event as any).is_archived ?? false,
   };
 };
 
@@ -189,12 +231,39 @@ async function fetchEventsFromSupabase() {
   return data as FetchedEvent[];
 }
 
+async function fetchUpcomingEventsFromSupabase() {
+  const supabase = getServerSupabase();
+  const todayIso = new Date().toISOString().slice(0, 10);
+
+  const { data, error: supabaseError } = await supabase
+    .from("events")
+    .select("*")
+    .gte("event_date", todayIso)
+    .order("event_date", { ascending: true })
+    .limit(12);
+
+  if (supabaseError) {
+    throw new Error(supabaseError.message);
+  }
+
+  return (data as FetchedEvent[]) || [];
+}
+
 // OPTIMIZATION: Cache the Supabase query with unstable_cache
 const getCachedEvents = unstable_cache(
   fetchEventsFromSupabase,
   ['events-list'],
   { 
     revalidate: 60, // 1 minute - reduced for faster updates when events are modified
+    tags: ['events']
+  }
+);
+
+const getCachedUpcomingEvents = unstable_cache(
+  fetchUpcomingEventsFromSupabase,
+  ['events-upcoming-list'],
+  {
+    revalidate: 60,
     tags: ['events']
   }
 );
@@ -208,8 +277,11 @@ async function getInitialEventsData() {
   let error: string | null = null;
 
   try {
-    // Use cached Supabase query
-    const data = await getCachedEvents();
+    // Use cached Supabase queries
+    const [data, upcomingData] = await Promise.all([
+      getCachedEvents(),
+      getCachedUpcomingEvents().catch(() => [] as FetchedEvent[]),
+    ]);
 
     if (data && Array.isArray(data)) {
       allEvents = data;
@@ -232,7 +304,14 @@ async function getInitialEventsData() {
           return { ...baseCardData, tags: uniqueTags };
         });
 
-        upcomingEvents = latestEventsForSections.map(transformToEventCardData);
+        const normalizedUpcoming =
+          Array.isArray(upcomingData) && upcomingData.length > 0
+            ? getUpcomingEventsFromDataset(upcomingData)
+            : getUpcomingEventsFromDataset(allEvents);
+
+        upcomingEvents = normalizedUpcoming
+          .slice(0, 3)
+          .map(transformToEventCardData);
       } else {
         console.log("No events found from Supabase.");
       }

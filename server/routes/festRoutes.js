@@ -54,6 +54,29 @@ const parseJsonLikeField = (value, fallbackValue) => {
   return value;
 };
 
+const parseComparableDate = (value) => {
+  if (!value) return null;
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+    if (dateOnlyMatch) {
+      const [, year, month, day] = dateOnlyMatch;
+      const parsed = new Date(Number(year), Number(month) - 1, Number(day));
+      parsed.setHours(0, 0, 0, 0);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    const parsed = new Date(trimmed);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 const isMissingColumnError = (error) => String(error?.code || "") === "42703";
 
 const mapFestResponse = (fest) => {
@@ -77,7 +100,7 @@ const mapFestResponse = (fest) => {
 // GET all fests
 router.get("/", async (req, res) => {
   try {
-    const { page, pageSize, search, sortBy, sortOrder } = req.query;
+    const { page, pageSize, search, status, sortBy, sortOrder } = req.query;
     const festTable = await getFestTableForDatabase(queryAll);
     console.log("Fetching all fests...");
     const fests = await queryAll(festTable, {
@@ -118,8 +141,53 @@ router.get("/", async (req, res) => {
       );
     }
 
-    const normalizedSortBy = typeof sortBy === "string" ? sortBy : "date";
-    const normalizedSortOrder = sortOrder === "asc" ? "asc" : "desc";
+    const normalizedStatus = typeof status === "string" ? status.toLowerCase() : "all";
+    if (normalizedStatus !== "all") {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      processedFests = processedFests.filter((fest) => {
+        const openingDate = parseComparableDate(fest.opening_date);
+        const closingDate = parseComparableDate(fest.closing_date) || openingDate;
+
+        if (!openingDate && !closingDate) {
+          return false;
+        }
+
+        const referenceEndDate = closingDate || openingDate;
+        if (!referenceEndDate) {
+          return false;
+        }
+
+        if (normalizedStatus === "past") {
+          return referenceEndDate.getTime() < today.getTime();
+        }
+
+        if (normalizedStatus === "ongoing") {
+          if (!openingDate || !closingDate) return false;
+          return openingDate.getTime() <= today.getTime() && closingDate.getTime() >= today.getTime();
+        }
+
+        if (normalizedStatus === "upcoming") {
+          return referenceEndDate.getTime() >= today.getTime();
+        }
+
+        return true;
+      });
+    }
+
+    const hasExplicitSortBy = typeof sortBy === "string" && sortBy.trim() !== "";
+    const hasExplicitSortOrder = sortOrder === "asc" || sortOrder === "desc";
+    const normalizedSortBy = hasExplicitSortBy
+      ? sortBy
+      : normalizedStatus === "upcoming"
+        ? "opening_date"
+        : "date";
+    const normalizedSortOrder = hasExplicitSortOrder
+      ? sortOrder
+      : normalizedStatus === "upcoming"
+        ? "asc"
+        : "desc";
     processedFests.sort((a, b) => {
       let result = 0;
       switch (normalizedSortBy) {
@@ -136,13 +204,19 @@ router.get("/", async (req, res) => {
           break;
         case "date":
         case "opening_date":
-          result = new Date(a.opening_date || 0).getTime() - new Date(b.opening_date || 0).getTime();
+          result =
+            (parseComparableDate(a.opening_date)?.getTime() || 0) -
+            (parseComparableDate(b.opening_date)?.getTime() || 0);
           break;
         case "created_at":
-          result = new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+          result =
+            (parseComparableDate(a.created_at)?.getTime() || 0) -
+            (parseComparableDate(b.created_at)?.getTime() || 0);
           break;
         default:
-          result = new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+          result =
+            (parseComparableDate(a.created_at)?.getTime() || 0) -
+            (parseComparableDate(b.created_at)?.getTime() || 0);
           break;
       }
       return normalizedSortOrder === "asc" ? result : -result;
@@ -174,7 +248,8 @@ router.get("/", async (req, res) => {
         hasPrev: safePage > 1
       },
       filters: {
-        search: normalizedSearch
+        search: normalizedSearch,
+        status: normalizedStatus,
       },
       sort: {
         by: normalizedSortBy,
