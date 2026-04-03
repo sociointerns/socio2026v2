@@ -202,7 +202,7 @@ const toEventCard = (event: FetchedEvent): EventForCard => {
     tags: deriveTags(event),
     image:
       event.event_image_url ||
-      "https://placehold.co/400x250/e2e8f0/64748b?text=Event+Image",
+      process.env.NEXT_PUBLIC_EVENT_IMAGE_PLACEHOLDER_URL!,
     organizing_dept: event.organizing_dept || "TBD",
     allow_outsiders: event.allow_outsiders ?? false,
   };
@@ -214,7 +214,7 @@ const toCarouselImage = (event: FetchedEvent): CarouselDisplayImage => {
     src:
       event.banner_url ||
       event.event_image_url ||
-      "https://placehold.co/1200x400/e2e8f0/64748b?text=Event+Banner",
+      process.env.NEXT_PUBLIC_EVENT_BANNER_PLACEHOLDER_URL!,
     link: `/event/${event.event_id}`,
     title: event.title,
     department: event.organizing_dept || "",

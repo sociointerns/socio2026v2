@@ -61,7 +61,7 @@ export default function StudentsPage() {
       setIsDataLoading(true);
       setError(null);
       try {
-        const apiBaseUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/api\/?$/, "");
+        const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL!.replace(/\/api\/?$/, "");
         
         // Fetch event details, registrations, and attendance status in parallel
         const [eventResponse, registrationsResponse, attendanceResponse] = await Promise.all([

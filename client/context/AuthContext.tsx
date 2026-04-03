@@ -5,8 +5,8 @@ import { createBrowserClient } from "@supabase/ssr";
 import { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
 import CampusDetectionModal, { isCampusDismissedRecently } from "../app/_components/CampusDetectionModal";
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/api\/?$/, "");
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL!.replace(/\/api\/?$/, "");
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL!;
 
 type UserData = {
   id: number;

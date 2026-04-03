@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import AdminDashboardView from "../_components/Admin/AdminDashboardView";
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/api\/?$/, "");
+const API_URL = process.env.NEXT_PUBLIC_API_URL!.replace(/\/api\/?$/, "");
 const ITEMS_PER_PAGE = 20;
 
 const AnalyticsDashboard = dynamic(

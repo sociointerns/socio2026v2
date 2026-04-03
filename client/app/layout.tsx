@@ -11,6 +11,7 @@ import { unstable_cache } from "next/cache";
 import { Suspense } from "react";
 import ClientInit from "./_components/ClientInit";
 import MobileDetectionRedirect from "./_components/MobileDetectionRedirect";
+import { DM_Sans } from "next/font/google";
 
 import {
   EventsProvider,
@@ -22,6 +23,12 @@ import {
 // OPTIMIZATION: Use Incremental Static Regeneration instead of force-dynamic
 // This caches the initial data and revalidates every 5 minutes
 export const revalidate = 300; // Revalidate every 5 minutes
+
+const dmSans = DM_Sans({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-dm-sans",
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -129,7 +136,7 @@ const transformToEventCardData = (event: FetchedEvent): EventForCard => {
     tags: deriveTags(event),
     image:
       event.event_image_url ||
-      "https://placehold.co/400x250/e2e8f0/64748b?text=Event+Image",
+      process.env.NEXT_PUBLIC_EVENT_IMAGE_PLACEHOLDER_URL!,
     organizing_dept: event.organizing_dept || "TBD",
     allow_outsiders: event.allow_outsiders ?? false,
   };
@@ -143,7 +150,7 @@ const transformToCarouselImage = (
     src:
       event.banner_url ||
       event.event_image_url ||
-      "https://placehold.co/1200x400/e2e8f0/64748b?text=Event+Banner",
+      process.env.NEXT_PUBLIC_EVENT_BANNER_PLACEHOLDER_URL!,
     link: `/event/${event.event_id}`,
     title: event.title,
     department: event.organizing_dept || "",
@@ -273,12 +280,9 @@ export default async function RootLayout({
       <head>
         <OrganizationJsonLd />
         <WebsiteJsonLd />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap" rel="stylesheet" />
       </head>
       <body
-        className="font-sans antialiased bg-[#FFFFFF] text-[#101010] font-[DM_Sans] overflow-x-hidden"
+        className={`${dmSans.className} font-sans antialiased bg-[#FFFFFF] text-[#101010] overflow-x-hidden`}
       >
         <ClientInit />
         <MobileDetectionRedirect />

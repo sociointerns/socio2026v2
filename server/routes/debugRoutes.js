@@ -1,8 +1,16 @@
 import express from 'express';
-import { authenticateUser, getUserInfo, optionalAuth } from '../middleware/authMiddleware.js';
+import { authenticateUser, getUserInfo } from '../middleware/authMiddleware.js';
 import { queryOne } from '../config/database.js';
 
 const router = express.Router();
+const debugRoutesEnabled = process.env.NODE_ENV !== 'production';
+
+router.use((req, res, next) => {
+  if (!debugRoutesEnabled) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  next();
+});
 
 // Debug endpoint to check resource data (no auth required)
 router.get('/resource/:table/:id', async (req, res) => {

@@ -8,12 +8,12 @@ import Link from 'next/link';
 const ComingSoon = () => {
   const pageRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
-  const pwaUrl = process.env.NEXT_PUBLIC_PWA_URL || "https://app.withsocio.com";
+  const pwaUrl = process.env.NEXT_PUBLIC_PWA_URL!;
   const pwaDisplayHost = (() => {
     try {
       return new URL(pwaUrl).host;
     } catch {
-      return "app.withsocio.com";
+      return window.location.host;
     }
   })();
 

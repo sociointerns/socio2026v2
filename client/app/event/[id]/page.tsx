@@ -37,7 +37,7 @@ interface EventData {
 export default function Page() {
   const params = useParams(); // { id: string }
   const eventIdSlug = params?.id ? String(params.id) : null;
-  const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/api\/?$/, "");
+  const API_URL = process.env.NEXT_PUBLIC_API_URL!.replace(/\/api\/?$/, "");
 
   const router = useRouter();
 
@@ -230,7 +230,7 @@ export default function Page() {
       image:
         foundEvent.banner_url ||
         foundEvent.event_image_url ||
-        "https://placehold.co/1200x600/e2e8f0/64748b?text=Event+Image",
+        process.env.NEXT_PUBLIC_EVENT_BANNER_PLACEHOLDER_URL!,
       pdf: foundEvent.pdf_url || undefined,
       organizers:
         transformedOrganizers.length > 0 ? transformedOrganizers : undefined,

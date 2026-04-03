@@ -1,5 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
+import helmet from "helmet";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import path from "path";
 import { fileURLToPath } from 'url';
 import { initializeDatabase } from "./config/database.js";
@@ -21,6 +23,13 @@ dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const isProduction = process.env.NODE_ENV === "production";
+const debugRoutesEnabled = !isProduction;
+
+const parsePositiveInt = (value, fallback) => {
+  const parsed = Number.parseInt(String(value), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
 
 // Initialize Supabase database connection (don't block startup)
 initializeDatabase().catch(err => {
@@ -28,7 +37,16 @@ initializeDatabase().catch(err => {
 });
 
 const app = express();
-app.use(express.json());
+
+app.disable("x-powered-by");
+app.set("trust proxy", 1);
+app.use(express.json({ limit: "1mb" }));
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  })
+);
 
 // Prevent stale API payloads from being cached by browsers or intermediary caches.
 app.use('/api', (req, res, next) => {
@@ -40,7 +58,7 @@ app.use('/api', (req, res, next) => {
 });
 
 // CORS - restrict to allowed origins in production
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'https://socio.christuniversity.in,http://localhost:3000,http://127.0.0.1:3000')
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
   .split(',')
   .map(s => s.trim())
   .filter(Boolean);
@@ -82,6 +100,19 @@ app.use((req, res, next) => {
   next();
 });
 
+const apiRateLimiter = rateLimit({
+  windowMs: parsePositiveInt(process.env.RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
+  max: parsePositiveInt(process.env.RATE_LIMIT_MAX, isProduction ? 300 : 1200),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(req.ip || "127.0.0.1"),
+  message: {
+    error: "Too many requests. Please try again shortly.",
+  },
+});
+
+app.use("/api", apiRateLimiter);
+
 // Serve uploaded files statically
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
@@ -118,7 +149,9 @@ app.use("/api", attendanceRoutes);
 app.use("/api", notificationRoutes);
 app.use("/api", uploadRoutes);
 app.use("/api", contactRoutes);
-app.use("/api/debug", debugRoutes);
+if (debugRoutesEnabled) {
+  app.use("/api/debug", debugRoutes);
+}
 app.use("/api/chat", chatRoutes);
 app.use("/api", reportRoutes);
 
@@ -126,12 +159,21 @@ app.use("/api", reportRoutes);
 app.use((err, req, res, next) => {
   console.error('Global error:', err);
   setCorsHeaders(req, res);
-  res.status(500).json({ error: 'Internal server error', message: err.message });
+
+  const payload = {
+    error: 'Internal server error',
+  };
+
+  if (!isProduction) {
+    payload.message = err.message;
+  }
+
+  res.status(500).json(payload);
 });
 
 const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => {
   console.log(`✅ Server is running on port ${PORT}`);
   console.log(`📁 Upload directory: ${path.join(__dirname, 'uploads')}`);
-  console.log(`🗄️  Database: Supabase (${process.env.SUPABASE_URL || 'https://vkappuaapscvteexogtp.supabase.co'})`);
+  console.log(`🗄️  Database: Supabase (${process.env.SUPABASE_URL || 'not configured'})`);
 });

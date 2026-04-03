@@ -1,47 +1,31 @@
+import path from "path";
+import { fileURLToPath } from "url";
 import type { NextConfig } from "next";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const remoteImageHosts = (process.env.NEXT_PUBLIC_REMOTE_IMAGE_HOSTS || "")
+  .split(",")
+  .map((host) => host.trim())
+  .filter(Boolean);
+
+if (remoteImageHosts.length === 0) {
+  throw new Error("Missing NEXT_PUBLIC_REMOTE_IMAGE_HOSTS");
+}
+
+const remotePatterns = remoteImageHosts.map((hostname) => ({
+  protocol: "https" as const,
+  hostname,
+  pathname: "/**",
+}));
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  eslint: {
-    // Temporary unblock: lint is still available via separate lint command.
-    ignoreDuringBuilds: true,
-  },
+  outputFileTracingRoot: path.join(__dirname, ".."),
   images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "lh3.googleusercontent.com",
-      },
-      {
-        protocol: "https",
-        hostname: "*.googleusercontent.com",
-      },
-      {
-        protocol: "https",
-        hostname: "img.recraft.ai",
-      },
-      {
-        protocol: "https",
-        hostname: "placehold.co",
-      },
-      {
-        protocol: "https",
-        hostname: "vkappuaapscvteexogtp.supabase.co",
-      },
-      {
-        protocol: "https",
-        hostname: "*.supabase.co",
-      },
-      {
-        protocol: "https",
-        hostname: "christuniversity.in",
-      },
-      {
-        protocol: "https",
-        hostname: "*.christuniversity.in",
-      },
-    ],
+    remotePatterns,
     // OPTIMIZATION: Enable image optimization caching
     formats: ['image/webp', 'image/avif'],
     minimumCacheTTL: 31536000, // 1 year

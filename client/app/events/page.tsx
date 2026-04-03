@@ -341,7 +341,7 @@ const EventsPageContent = () => {
                         tags={event.category ? [event.category] : []}
                         image={
                           event.event_image_url ||
-                          "https://placehold.co/400x250/e2e8f0/64748b?text=No+Image"
+                          process.env.NEXT_PUBLIC_EVENT_IMAGE_PLACEHOLDER_URL!
                         }
                       />
                     </div>

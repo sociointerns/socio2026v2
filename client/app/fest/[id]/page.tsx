@@ -87,7 +87,7 @@ const generateGoogleCalendarUrl = (eventTitle: string, eventDate: string, eventT
     }
     
     // Build Google Calendar URL
-    const baseUrl = 'https://calendar.google.com/calendar/render?action=TEMPLATE';
+    const baseUrl = process.env.NEXT_PUBLIC_GOOGLE_CALENDAR_BASE_URL!;
     const params = new URLSearchParams({
       text: eventTitle,
       dates: `${startDateTime}/${endDateTime}`,
@@ -128,7 +128,7 @@ const FestPage = () => {
     setLoadingFestDetails(true);
     setErrorFestDetails(null);
 
-    const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/api\/?$/, "");
+    const API_URL = process.env.NEXT_PUBLIC_API_URL!.replace(/\/api\/?$/, "");
 
     fetch(`${API_URL}/api/fests/${festIdSlug}`)
       .then((res) => {
@@ -595,7 +595,7 @@ const FestPage = () => {
                         tags={tags.slice(0, 3)}
                         image={
                           event.event_image_url ||
-                          "https://placehold.co/400x250/e2e8f0/64748b?text=Event+Image"
+                          process.env.NEXT_PUBLIC_EVENT_IMAGE_PLACEHOLDER_URL!
                         }
                       />
                     </div>

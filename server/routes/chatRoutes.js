@@ -5,6 +5,7 @@ import { authenticateUser } from "../middleware/authMiddleware.js";
 import { getFestTableForSupabase } from "../utils/festTableResolver.js";
 
 const router = express.Router();
+const isProduction = process.env.NODE_ENV === "production";
 
 // Lazy-init Gemini — don't crash if key is missing at startup
 let genAI = null;
@@ -42,7 +43,7 @@ Rules:
 const dailyLimitMap = new Map();
 
 // Clean up old entries every hour
-setInterval(() => {
+const dailyLimitCleanupInterval = setInterval(() => {
   const today = new Date().toDateString();
   for (const [key] of dailyLimitMap.entries()) {
     if (!key.includes(today)) {
@@ -51,22 +52,23 @@ setInterval(() => {
   }
 }, 3600000);
 
-// Health check — no auth, shows config status for debugging
+if (typeof dailyLimitCleanupInterval.unref === "function") {
+  dailyLimitCleanupInterval.unref();
+}
+
+// Health check — no auth, no sensitive details.
 router.get("/health", (req, res) => {
   const hasGeminiKey = !!process.env.GEMINI_API_KEY;
   const hasSupabaseUrl = !!process.env.SUPABASE_URL;
   const hasSupabaseKey = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const keyPrefix = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.substring(0, 6) + "..." : "NOT SET";
-  
+
   res.json({
     status: "ok",
-    config: {
-      geminiKey: hasGeminiKey,
-      geminiKeyPrefix: keyPrefix,
-      supabaseUrl: hasSupabaseUrl,
-      supabaseServiceKey: hasSupabaseKey,
+    services: {
+      ai: hasGeminiKey ? "configured" : "missing",
+      database: hasSupabaseUrl && hasSupabaseKey ? "configured" : "missing",
     },
-    sdkVersion: "@google/generative-ai loaded"
+    timestamp: new Date().toISOString(),
   });
 });
 
@@ -254,10 +256,15 @@ ${fests?.map((f) => `- ${f.fest_title} | ${new Date(f.opening_date).toLocaleDate
       });
     }
 
-    res.status(500).json({ 
+    const payload = {
       error: "Failed to generate response. Please try again.",
-      debug: error.message 
-    });
+    };
+
+    if (!isProduction) {
+      payload.details = error.message;
+    }
+
+    res.status(500).json(payload);
   }
 });
 

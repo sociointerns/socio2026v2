@@ -3,7 +3,7 @@
 import React, { useState, useEffect, memo, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/api\/?$/, "");
+const API_URL = process.env.NEXT_PUBLIC_API_URL!.replace(/\/api\/?$/, "");
 
 // ─── LOCAL STORAGE + COOKIES HELPERS ───────────────────────────────────────
 // Store read notifications locally so they persist across refreshes

@@ -4,15 +4,15 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Supabase configuration
-const supabaseUrl = process.env.SUPABASE_URL || 'https://wvebxdbvoinylwecmisv.supabase.co';
+const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-if (!supabaseServiceKey) {
-  console.error('❌ SUPABASE_SERVICE_ROLE_KEY is required - using fallback');
+if (!supabaseUrl || !supabaseServiceKey) {
+  throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
 }
 
 // Create Supabase client with service role key for full access
-const supabase = createClient(supabaseUrl, supabaseServiceKey || 'dummy-key-for-build');
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 // Initialize database - just verify connection for Supabase
 export async function initializeDatabase() {

@@ -135,7 +135,7 @@ const MappedFestCard = ({ fest, baseUrl }: { fest: Fest, baseUrl: string }) => {
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col hover:shadow-md transition-shadow duration-300">
       <div className="h-48 relative bg-slate-100">
         <img
-          src={fest.fest_image_url || "https://placehold.co/600x400/171f2e/ffffff?text=" + encodeURIComponent(fest.fest_title || "Fest")}
+          src={fest.fest_image_url || process.env.NEXT_PUBLIC_EVENT_BANNER_PLACEHOLDER_URL!}
           alt={fest.fest_title}
           className="w-full h-full object-cover"
         />
@@ -208,7 +208,7 @@ const MappedEventCard = ({
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col hover:shadow-md transition-shadow duration-300">
       <div className="h-48 relative bg-slate-100">
         <img
-          src={event.event_image_url || "https://placehold.co/600x400/171f2e/ffffff?text=" + encodeURIComponent(event.title || "Event")}
+          src={event.event_image_url || process.env.NEXT_PUBLIC_EVENT_BANNER_PLACEHOLDER_URL!}
           alt={event.title}
           className="w-full h-full object-cover"
         />
@@ -480,7 +480,7 @@ export default function ManageDashboard() {
   const handleGenerateReport = async () => {
     setIsGenerating(true);
     try {
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const API_URL = process.env.NEXT_PUBLIC_API_URL!;
       const response = await fetch(`${API_URL}/api/report/data`, {
         method: "POST",
         headers: {
@@ -709,7 +709,7 @@ export default function ManageDashboard() {
     });
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL!;
       const response = await fetch(`${apiUrl}/api/events/${eventId}/archive`, {
         method: "PATCH",
         headers: {

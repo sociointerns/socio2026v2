@@ -107,7 +107,7 @@ const StudentProfile = () => {
       // Fetch registered events if possible
       const fetchRegisteredEvents = async () => {
         setIsLoadingRegisteredEvents(true);
-        const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/api\/?$/, "");
+        const API_URL = process.env.NEXT_PUBLIC_API_URL!.replace(/\/api\/?$/, "");
         try {
           // Check if we have a registration number
           if (!userData.register_number) {
@@ -198,7 +198,7 @@ const StudentProfile = () => {
     }
     setIsSubmittingName(true);
     try {
-      const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/api\/?$/, "");
+      const API_URL = process.env.NEXT_PUBLIC_API_URL!.replace(/\/api\/?$/, "");
       const headers: any = { 'Content-Type': 'application/json' };
       const token = (session as any)?.access_token || (session as any)?.provider_token || (session as any)?.refresh_token;
       if (token) {

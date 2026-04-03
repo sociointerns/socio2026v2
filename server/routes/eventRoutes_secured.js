@@ -22,41 +22,44 @@ import { sendBroadcastNotification } from "./notificationRoutes.js";
 import { pushEventToGated, shouldPushEventToGated, isGatedEnabled } from "../utils/gatedSync.js";
 
 const router = express.Router();
+const debugRoutesEnabled = process.env.NODE_ENV !== "production";
 
 // DIAGNOSTIC ENDPOINT - Check authentication and organiser status
-router.get("/debug/status", 
-  authenticateUser,
-  getUserInfo(),
-  checkRoleExpiration,
-  async (req, res) => {
-    try {
-      console.log("[DEBUG] User status request from:", req.userInfo.email);
-      
-      return res.json({
-        authenticated: true,
-        userId: req.userInfo.auth_uuid,
-        email: req.userInfo.email,
-        isOrganiser: req.userInfo.is_organiser,
-        organiserExpiresAt: req.userInfo.organiser_expires_at,
-        isMasterAdmin: req.userInfo.is_masteradmin,
-        isSupport: req.userInfo.is_support,
-        message: req.userInfo.is_organiser 
-          ? "✅ You have organiser privileges" 
-          : "❌ You do NOT have organiser privileges. Contact admin to enable.",
-        roles: {
-          organiser: req.userInfo.is_organiser,
-          masteradmin: req.userInfo.is_masteradmin,
-          support: req.userInfo.is_support
-        }
-      });
-    } catch (error) {
-      console.error("[DEBUG] Error checking status:", error);
-      return res.status(500).json({ 
-        error: error.message,
-        message: "Error checking authentication status"
-      });
-    }
-});
+if (debugRoutesEnabled) {
+  router.get("/debug/status", 
+    authenticateUser,
+    getUserInfo(),
+    checkRoleExpiration,
+    async (req, res) => {
+      try {
+        console.log("[DEBUG] User status request from:", req.userInfo.email);
+        
+        return res.json({
+          authenticated: true,
+          userId: req.userInfo.auth_uuid,
+          email: req.userInfo.email,
+          isOrganiser: req.userInfo.is_organiser,
+          organiserExpiresAt: req.userInfo.organiser_expires_at,
+          isMasterAdmin: req.userInfo.is_masteradmin,
+          isSupport: req.userInfo.is_support,
+          message: req.userInfo.is_organiser 
+            ? "✅ You have organiser privileges" 
+            : "❌ You do NOT have organiser privileges. Contact admin to enable.",
+          roles: {
+            organiser: req.userInfo.is_organiser,
+            masteradmin: req.userInfo.is_masteradmin,
+            support: req.userInfo.is_support
+          }
+        });
+      } catch (error) {
+        console.error("[DEBUG] Error checking status:", error);
+        return res.status(500).json({ 
+          error: error.message,
+          message: "Error checking authentication status"
+        });
+      }
+  });
+}
 
 const normalizeJsonField = (value) => {
   if (!value) return [];
