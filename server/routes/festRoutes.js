@@ -287,7 +287,7 @@ router.post(
         contact_email: festData.contactEmail || festData.contact_email || "",
         contact_phone: festData.contactPhone || festData.contact_phone || "",
         event_heads: festData.eventHeads || festData.event_heads || [],
-        created_by: festData.createdBy || festData.created_by || req.userInfo?.email || req.userId,
+        created_by: req.userInfo?.email,
         auth_uuid: req.userId,
         // New enhanced fest fields
         venue: festData.venue || null,

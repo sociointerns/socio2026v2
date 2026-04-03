@@ -1,7 +1,6 @@
--- SOCIO Complete Database Schema for Supabase
+-- SOCIO COMPLETE DATABASE SCHEMA FOR SUPABASE
 -- CHRIST University Event Management Platform
 -- Apply this entire script in: https://app.supabase.com/project/wvebxdbvoinylwecmisv/sql/new
-
 -- Run this ONCE in Supabase SQL Editor. Paste everything below and click Run.
 
 -- ============================================================
@@ -259,6 +258,7 @@ create index if not exists idx_users_created_at on public.users(created_at desc)
 create index if not exists idx_users_email_lower on public.users((lower(email)));
 create index if not exists idx_users_roles on public.users(is_organiser, is_support, is_masteradmin);
 create index if not exists idx_users_department_id on public.users(department_id);
+create index if not exists idx_users_campus on public.users(campus);
 
 create index if not exists idx_departments_courses_name on public.departments_courses(lower(department_name));
 create index if not exists idx_classes_department_id on public.classes(department_id);
@@ -272,9 +272,12 @@ create index if not exists idx_events_created_at on public.events(created_at des
 create index if not exists idx_events_event_date on public.events(event_date desc);
 create index if not exists idx_events_title_lower on public.events((lower(title)));
 create index if not exists idx_events_fest_id on public.events(fest_id);
+create index if not exists idx_events_campus_hosted_at on public.events(campus_hosted_at);
+create index if not exists idx_events_allowed_campuses on public.events using gin(allowed_campuses);
 
 create index if not exists idx_registrations_event_id on public.registrations(event_id);
 create index if not exists idx_registrations_user_email on public.registrations(user_email);
+create index if not exists idx_registrations_custom_fields on public.registrations using gin(custom_field_responses);
 
 create index if not exists idx_attendance_event_id on public.attendance_status(event_id);
 create index if not exists idx_attendance_registration_id on public.attendance_status(registration_id);
@@ -352,7 +355,7 @@ begin
 end $$;
 
 -- ============================================================
--- VERIFY SUCCESS
+-- VERIFICATION QUERIES
 -- ============================================================
 
 SELECT 'Core Tables' as check_type,
@@ -365,14 +368,20 @@ AND table_name IN (
   'qr_scan_logs', 'departments_courses', 'classes'
 );
 
-SELECT 'is_broadcast column exists' as status,
-CASE WHEN EXISTS (
-  SELECT 1 FROM information_schema.columns 
-  WHERE table_name = 'notifications' AND column_name = 'is_broadcast'
-) THEN '✅ YES' ELSE '❌ NO' END as result;
+SELECT 'users.campus' as column_checked, 
+  EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='campus') as exists;
 
-SELECT 'notification_user_status table exists' as status,
-CASE WHEN EXISTS (
-  SELECT 1 FROM information_schema.tables 
-  WHERE table_name = 'notification_user_status'
-) THEN '✅ YES' ELSE '❌ NO' END as result;
+SELECT 'events.campus_hosted_at' as column_checked, 
+  EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name='events' AND column_name='campus_hosted_at') as exists;
+
+SELECT 'events.allowed_campuses' as column_checked, 
+  EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name='events' AND column_name='allowed_campuses') as exists;
+
+SELECT 'registrations.custom_field_responses' as column_checked, 
+  EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name='registrations' AND column_name='custom_field_responses') as exists;
+
+SELECT 'notifications.is_broadcast' as column_checked, 
+  EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name='notifications' AND column_name='is_broadcast') as exists;
+
+SELECT 'notification_user_status table exists' as table_checked, 
+  EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name='notification_user_status') as exists;

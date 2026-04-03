@@ -454,7 +454,7 @@ router.post(
         whatsapp_invite_link: req.body.whatsapp_invite_link || null,
         organizing_dept: organizing_dept || null,
         fest_id: fest || null,
-        created_by: req.body.created_by || req.userInfo?.email || req.userId,
+        created_by: req.userInfo?.email,
         auth_uuid: req.userId,
         registration_deadline: req.body.registration_deadline || null,
         total_participants: 0,
