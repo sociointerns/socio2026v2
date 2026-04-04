@@ -161,24 +161,59 @@ const getFestByIdFromCandidates = async (festId, primaryTable) => {
 
 const deriveFestsFromEvents = (events, festRegistrationCounts = {}) => {
   const derivedFestMap = new Map();
+  const asBoolean = (value) => value === true || value === 1 || value === "1" || value === "true";
 
   for (const event of events || []) {
     const festKey = String(event?.fest_id || event?.fest || "").trim();
-    if (!festKey || derivedFestMap.has(festKey)) continue;
+    if (!festKey) continue;
 
-    derivedFestMap.set(festKey, {
-      fest_id: festKey,
-      fest_title: festKey,
-      organizing_dept: event?.organizing_dept || null,
-      opening_date: event?.event_date || null,
-      closing_date: event?.event_date || null,
-      created_at: event?.created_at || null,
-      is_archived: false,
-      registration_count: festRegistrationCounts[festKey] || 0,
-    });
+    if (!derivedFestMap.has(festKey)) {
+      derivedFestMap.set(festKey, {
+        fest_id: festKey,
+        fest_title: festKey,
+        organizing_dept: event?.organizing_dept || null,
+        opening_date: event?.event_date || null,
+        closing_date: event?.event_date || null,
+        created_at: event?.created_at || null,
+        registration_count: festRegistrationCounts[festKey] || 0,
+        _eventCount: 0,
+        _activeEventCount: 0,
+      });
+    }
+
+    const entry = derivedFestMap.get(festKey);
+    entry._eventCount += 1;
+    if (!asBoolean(event?.is_archived)) {
+      entry._activeEventCount += 1;
+    }
+
+    if (!entry.organizing_dept && event?.organizing_dept) {
+      entry.organizing_dept = event.organizing_dept;
+    }
+
+    if (!entry.opening_date && event?.event_date) {
+      entry.opening_date = event.event_date;
+    }
+
+    if (!entry.closing_date && event?.event_date) {
+      entry.closing_date = event.event_date;
+    }
+
+    if (!entry.created_at && event?.created_at) {
+      entry.created_at = event.created_at;
+    }
   }
 
-  return Array.from(derivedFestMap.values());
+  return Array.from(derivedFestMap.values()).map((fest) => ({
+    fest_id: fest.fest_id,
+    fest_title: fest.fest_title,
+    organizing_dept: fest.organizing_dept,
+    opening_date: fest.opening_date,
+    closing_date: fest.closing_date,
+    created_at: fest.created_at,
+    registration_count: fest.registration_count,
+    is_archived: fest._eventCount > 0 && fest._activeEventCount === 0,
+  }));
 };
 
 const mapFestResponse = (fest) => {
@@ -236,7 +271,7 @@ router.get("/", optionalAuth, checkRoleExpiration, async (req, res) => {
     let events = [];
     try {
       events = await queryAll("events", {
-        select: "event_id, fest, fest_id, organizing_dept, event_date, created_at",
+        select: "event_id, fest, fest_id, organizing_dept, event_date, created_at, is_archived",
       });
     } catch (error) {
       if (isMissingRelationError(error)) {
@@ -244,7 +279,7 @@ router.get("/", optionalAuth, checkRoleExpiration, async (req, res) => {
       } else if (isMissingColumnError(error)) {
         try {
           events = await queryAll("events", {
-            select: "event_id, fest_id, organizing_dept, event_date, created_at",
+            select: "event_id, fest_id, organizing_dept, event_date, created_at, is_archived",
           });
         } catch (fallbackError) {
           if (isMissingRelationError(fallbackError) || isMissingColumnError(fallbackError)) {
@@ -293,7 +328,8 @@ router.get("/", optionalAuth, checkRoleExpiration, async (req, res) => {
       registration_count: festRegistrationCounts[fest.fest_id] || 0
     }));
 
-    if (processedFests.length === 0 && (events || []).length > 0) {
+    const hasCanonicalFestRows = processedFests.length > 0;
+    if (!hasCanonicalFestRows && (events || []).length > 0) {
       processedFests = deriveFestsFromEvents(events, festRegistrationCounts);
     }
 
@@ -346,14 +382,6 @@ router.get("/", optionalAuth, checkRoleExpiration, async (req, res) => {
     
     if (!isAdminOrOrganizer) {
       processedFests = processedFests.filter((fest) => !fest.is_archived);
-
-      if (processedFests.length === 0) {
-        const derivedFallbackFests = deriveFestsFromEvents(events, festRegistrationCounts);
-        if (derivedFallbackFests.length > 0) {
-          console.warn("[Archive Filter] No active fests visible; serving event-derived fallback fests.");
-          processedFests = derivedFallbackFests;
-        }
-      }
 
       console.log(`[Archive Filter] Non-organizer viewing ${processedFests.length} non-archived fests`);
     } else {
