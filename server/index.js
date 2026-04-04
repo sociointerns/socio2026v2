@@ -15,6 +15,7 @@ import uploadRoutes from "./routes/uploadRoutes.js";
 import contactRoutes from "./routes/contactRoutes.js";
 import chatRoutes from "./routes/chatRoutes.js";
 import reportRoutes from "./routes/reportRoutes.js";
+import statuscheckRoutes from "./routes/statuscheckRoutes.js";
 
 dotenv.config();
 
@@ -152,6 +153,7 @@ app.use("/api", uploadRoutes);
 app.use("/api", contactRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api", reportRoutes);
+app.use("/api/statuscheck", statuscheckRoutes);
 
 // Global error handler - ensures CORS headers are always sent
 app.use((err, req, res, next) => {

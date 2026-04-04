@@ -71,12 +71,14 @@ export async function middleware(req: NextRequest) {
     return redirect("/auth");
   }
 
-  if (
-    user &&
-    (pathname.startsWith("/manage") ||
-      pathname.startsWith("/create") ||
-      pathname.startsWith("/edit"))
-  ) {
+  const isManagementRoute =
+    pathname.startsWith("/manage") ||
+    pathname.startsWith("/create") ||
+    pathname.startsWith("/edit");
+
+  const isStatuscheckRoute = pathname.startsWith("/statuscheck");
+
+  if (user && (isManagementRoute || isStatuscheckRoute)) {
     if (!user.email) {
       return redirect("/error");
     }
@@ -88,8 +90,13 @@ export async function middleware(req: NextRequest) {
       .single();
 
     const canManage = Boolean(userData?.is_organiser) || Boolean(userData?.is_masteradmin);
+    const canAccessStatuscheck = Boolean(userData?.is_masteradmin);
 
-    if (error || !userData || !canManage) {
+    if (isStatuscheckRoute && (error || !userData || !canAccessStatuscheck)) {
+      return redirect("/error");
+    }
+
+    if (isManagementRoute && (error || !userData || !canManage)) {
       return redirect("/error");
     }
   }
