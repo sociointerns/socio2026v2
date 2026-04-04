@@ -159,7 +159,20 @@ const isMissingArchiveColumnsError = (error) => {
 router.get("/", async (req, res) => {
   try {
     const { page, pageSize, search, status, sortBy, sortOrder, archive } = req.query;
-    const events = await queryAll("events", { order: { column: "created_at", ascending: false } });
+    const today = new Date().toISOString().split('T')[0];
+    
+    let queryOptions = { 
+      order: { column: "created_at", ascending: false } 
+    };
+
+    // Push basic status filtering to database
+    if (status === "upcoming" || status === "active") {
+      queryOptions.filters = [{ column: "event_date", operator: "gte", value: today }];
+    } else if (status === "past") {
+      queryOptions.filters = [{ column: "event_date", operator: "lt", value: today }];
+    }
+
+    const events = await queryAll("events", queryOptions);
 
     // Build registration counts once so both sorting and UI display use the same value.
     const registrations = await queryAll("registrations", { select: "event_id" });
@@ -195,15 +208,20 @@ router.get("/", async (req, res) => {
     }
 
     const normalizedStatus = typeof status === "string" ? status.toLowerCase() : "all";
-    if (normalizedStatus !== "all") {
+    if (normalizedStatus !== "all" && normalizedStatus !== "active") {
       const now = new Date();
+      now.setHours(0, 0, 0, 0); // Normalize to start of day
+      
       processedEvents = processedEvents.filter((event) => {
         const eventDate = new Date(event.event_date);
+        eventDate.setHours(0, 0, 0, 0); // Normalize to start of day
+        
         const diffDays = (eventDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
-        if (normalizedStatus === "past") return diffDays < -1;
-        if (normalizedStatus === "live") return Math.abs(diffDays) <= 1;
-        if (normalizedStatus === "thisweek") return diffDays > 1 && diffDays <= 7;
-        if (normalizedStatus === "upcoming") return diffDays > 7;
+        
+        if (normalizedStatus === "past") return diffDays < 0;
+        if (normalizedStatus === "live") return Math.abs(diffDays) < 1;
+        if (normalizedStatus === "thisweek") return diffDays >= 0 && diffDays <= 7;
+        if (normalizedStatus === "upcoming") return diffDays >= 0;
         return true;
       });
     }

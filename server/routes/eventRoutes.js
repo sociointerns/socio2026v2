@@ -24,9 +24,21 @@ const router = express.Router();
 // GET all events
 router.get("/", async (req, res) => {
   try {
-    const events = await queryAll("events", {
+    const { status } = req.query;
+    const today = new Date().toISOString().split('T')[0];
+    
+    let queryOptions = {
       order: { column: "created_at", ascending: false },
-    });
+    };
+
+    if (status === "upcoming") {
+      queryOptions.filters = [
+        { column: "event_date", operator: "gte", value: today }
+      ];
+      queryOptions.order = { column: "event_date", ascending: true };
+    }
+
+    const events = await queryAll("events", queryOptions);
 
     const processedEvents = (events || []).map((event) => ({
       ...event,

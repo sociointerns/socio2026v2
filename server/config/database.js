@@ -52,6 +52,23 @@ export async function queryAll(table, options = {}) {
     }
   }
   
+  if (options.filters) {
+    for (const filter of options.filters) {
+      const { column, operator, value } = filter;
+      if (operator === 'gte') {
+        query = query.gte(column, value);
+      } else if (operator === 'lte') {
+        query = query.lte(column, value);
+      } else if (operator === 'gt') {
+        query = query.gt(column, value);
+      } else if (operator === 'lt') {
+        query = query.lt(column, value);
+      } else if (operator === 'neq') {
+        query = query.neq(column, value);
+      }
+    }
+  }
+  
   if (options.order) {
     query = query.order(options.order.column, { ascending: options.order.ascending ?? true });
   }

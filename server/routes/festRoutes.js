@@ -102,10 +102,25 @@ router.get("/", async (req, res) => {
   try {
     const { page, pageSize, search, status, sortBy, sortOrder } = req.query;
     const festTable = await getFestTableForDatabase(queryAll);
-    console.log("Fetching all fests...");
-    const fests = await queryAll(festTable, {
+    const today = new Date().toISOString().split('T')[0];
+
+    let queryOptions = {
       order: { column: "created_at", ascending: false }
-    });
+    };
+
+    // Optimization: Filter by date in database if status is upcoming
+    if (status === "upcoming") {
+      queryOptions.filters = [
+        { column: "closing_date", operator: "gte", value: today }
+      ];
+    } else if (status === "past") {
+      queryOptions.filters = [
+        { column: "closing_date", operator: "lt", value: today }
+      ];
+    }
+
+    console.log(`Fetching fests with status: ${status || 'all'}...`);
+    const fests = await queryAll(festTable, queryOptions);
 
     const events = await queryAll("events", { select: "event_id, fest" });
     const registrations = await queryAll("registrations", { select: "event_id" });

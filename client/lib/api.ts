@@ -15,6 +15,19 @@ export async function getEvents() {
   return data || [];
 }
 
+export async function getUpcomingEvents(limit = 50) {
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const { data, error } = await supabase
+    .from('events')
+    .select('*')
+    .gte('event_date', todayIso)
+    .order('event_date', { ascending: true })
+    .limit(limit);
+  
+  if (error) throw error;
+  return data || [];
+}
+
 export async function getEventById(eventId: string) {
   const { data, error } = await supabase
     .from('events')
