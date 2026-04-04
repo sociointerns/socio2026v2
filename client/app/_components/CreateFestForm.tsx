@@ -1870,18 +1870,9 @@ function CreateFestForm(props?: CreateFestProps) {
 
                 {/* Custom Fields Section - After Contact Phone */}
                 <div className="bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-200 rounded-2xl p-6 sm:p-7 shadow-sm">
-                  <div className="mb-4">
-                    <h3 className="text-base font-bold text-[#063168] flex items-center gap-2">
-                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
-                        <path fillRule="evenodd" d="M4 5a2 2 0 012-2 1 1 0 000-2H6a6 6 0 016 6v3h3a2 2 0 110 4h-.5a.5.5 0 00-.5.5v.5a2.5 2.5 0 01-5 0V14h-.5a2 2 0 110-4h3v-3A4 4 0 004 5zm15 7a2 2 0 11-4 0 2 2 0 014 0z" clipRule="evenodd" />
-                      </svg>
-                      Custom Fields
-                    </h3>
-                    <p className="text-xs text-gray-600 mt-1 ml-7">Add additional questions for participants (optional)</p>
-                  </div>
-                  <div className="p-4 bg-white rounded-lg border border-gray-100 text-sm text-gray-600">
-                    <p>Custom fields feature for fests coming soon. You can add specific registration questions for your fest participants.</p>
+                  <div className="p-4 bg-white rounded-lg border border-indigo-100 text-sm text-gray-600">
+                    <p className="font-medium text-gray-700 mb-1">Custom Fields Coming Soon</p>
+                    <p className="text-xs">You'll be able to add specific registration fields for your fest participants.</p>
                   </div>
                 </div>
 
@@ -2367,10 +2358,10 @@ function CreateFestForm(props?: CreateFestProps) {
                     {errors.submit}
                   </p>
                 )}
-                <div className="flex items-center justify-end space-x-3 mt-8 sm:mt-10 pt-6 border-t border-gray-200">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-8 sm:mt-10 pt-6 border-t border-gray-200">
                   <Link
                     href="/manage"
-                    className="px-4 sm:px-5 py-2 sm:py-3 rounded-full border border-gray-300 font-medium text-gray-700 hover:bg-gray-50 transition-colors text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
+                    className="w-full sm:w-auto px-5 py-2.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#154CB3] focus:ring-offset-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer text-center"
                   >
                     Cancel
                   </Link>
@@ -2379,11 +2370,11 @@ function CreateFestForm(props?: CreateFestProps) {
                       type="button"
                       onClick={deleteFest}
                       disabled={isNavigating || isSubmitting}
-                      className="cursor-pointer px-4 sm:px-5 py-2 sm:py-3 rounded-full border bg-[#f93232] border-red-400 font-medium text-white hover:bg-[#f93232de] transition-colors text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                      className="w-full sm:w-auto px-4 py-2.5 border border-red-300 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
                     >
                       {isNavigating && (
                         <svg
-                          className="animate-spin -ml-1 mr-2 h-5 w-5 text-white"
+                          className="animate-spin h-4 w-4 text-white"
                           xmlns="http://www.w3.org/2000/svg"
                           fill="none"
                           viewBox="0 0 24 24"
@@ -2403,28 +2394,17 @@ function CreateFestForm(props?: CreateFestProps) {
                           ></path>
                         </svg>
                       )}
-                      {isNavigating ? "Deleting..." : "Delete fest"}
+                      <span>{isNavigating ? "Deleting..." : "Delete"}</span>
                     </button>
                   )}
                   <button
                     type="submit"
-                    disabled={
-                      isSubmitting ||
-                      isNavigating ||
-                      (imageFile && !supabase && !finalIsEditMode) ||
-                      false
-                    }
-                    className={`cursor-pointer px-4 sm:px-6 py-2 sm:py-3 bg-[#154CB3] text-white rounded-full font-medium hover:bg-[#154cb3eb] transition-colors text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-[#154CB3] focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center ${
-                      isSubmitting ||
-                      isNavigating ||
-                      (imageFile && !supabase && !finalIsEditMode)
-                        ? "opacity-50 cursor-not-allowed"
-                        : ""
-                    }`}
+                    disabled={isSubmitting || isNavigating || (imageFile && !supabase && !finalIsEditMode)}
+                    className="w-full sm:w-auto px-6 py-2.5 bg-[#154CB3] text-white text-sm font-medium rounded-lg hover:bg-[#0f3a7a] focus:outline-none focus:ring-2 focus:ring-[#154CB3] focus:ring-offset-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
                   >
                     {(isSubmitting || isUploadingImage) && (
                       <svg
-                        className="animate-spin -ml-1 mr-2 h-5 w-5 text-white"
+                        className="animate-spin h-4 w-4 text-white"
                         xmlns="http://www.w3.org/2000/svg"
                         fill="none"
                         viewBox="0 0 24 24"
@@ -2444,15 +2424,17 @@ function CreateFestForm(props?: CreateFestProps) {
                         ></path>
                       </svg>
                     )}
-                    {isUploadingImage
-                      ? "Uploading image..."
-                      : isSubmitting
-                      ? finalIsEditMode
-                        ? "Updating..."
-                        : "Publishing..."
-                      : finalIsEditMode
-                      ? "Update fest"
-                      : "Publish fest"}
+                    <span>
+                      {isUploadingImage
+                        ? "Uploading image..."
+                        : isSubmitting
+                        ? finalIsEditMode
+                          ? "Updating..."
+                          : "Publishing..."
+                        : finalIsEditMode
+                        ? "Update Fest"
+                        : "Publish Fest"}
+                    </span>
                   </button>
                 </div>
               </form>

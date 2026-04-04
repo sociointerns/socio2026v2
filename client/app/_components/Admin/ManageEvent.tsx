@@ -722,8 +722,8 @@ interface EventFormProps {
 
 const baseButtonClasses =
   "inline-flex items-center justify-center text-sm sm:text-base font-medium rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-opacity-50";
-const primaryButtonClasses = `${baseButtonClasses} bg-[#154CB3] text-white hover:bg-[#154cb3eb] focus:ring-[#154CB3] px-4 sm:px-6 py-2 sm:py-2.5 disabled:opacity-60 disabled:cursor-not-allowed`;
-const secondaryButtonClasses = `${baseButtonClasses} border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 focus:ring-[#154CB3] px-4 sm:px-5 py-2 sm:py-2.5 disabled:opacity-60 disabled:cursor-not-allowed`;
+const primaryButtonClasses = `${baseButtonClasses} bg-[#154CB3] text-white hover:bg-[#0f3a7a] focus:ring-[#154CB3] px-4 sm:px-6 py-2 sm:py-2.5 disabled:opacity-60 disabled:cursor-not-allowed rounded-lg`;
+const secondaryButtonClasses = `${baseButtonClasses} border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 focus:ring-[#154CB3] px-4 sm:px-5 py-2 sm:py-2.5 disabled:opacity-60 disabled:cursor-not-allowed rounded-lg`;
 const toggleTrackClass =
   "w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-[#154CB3]/50 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#154CB3]";
 
@@ -1661,16 +1661,6 @@ export default function EventForm({
 
                 {/* Custom Fields Section - Moved Up */}
                 <div className="bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-200 rounded-2xl p-6 sm:p-7 shadow-sm">
-                  <div className="mb-4">
-                    <h3 className="text-base font-bold text-[#063168] flex items-center gap-2">
-                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
-                        <path fillRule="evenodd" d="M4 5a2 2 0 012-2 1 1 0 000-2H6a6 6 0 016 6v3h3a2 2 0 110 4h-.5a.5.5 0 00-.5.5v.5a2.5 2.5 0 01-5 0V14h-.5a2 2 0 110-4h3v-3A4 4 0 004 5zm15 7a2 2 0 11-4 0 2 2 0 014 0z" clipRule="evenodd" />
-                      </svg>
-                      Custom Fields
-                    </h3>
-                    <p className="text-xs text-gray-600 mt-1 ml-7">Add additional questions for participants</p>
-                  </div>
                   <Controller
                     name="customFields"
                     control={control}
@@ -1708,67 +1698,65 @@ export default function EventForm({
                   errors={errors}
                 />
 
-                <div className="flex flex-col-reverse sm:flex-row items-center justify-end space-y-3 space-y-reverse sm:space-y-0 sm:space-x-4 mt-8 sm:mt-10">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-8 sm:mt-10 pt-6 border-t border-gray-200">
                   <button
                     type="button"
                     onClick={handleNavigationToDashboard}
                     disabled={isSubmittingProp || rhfIsSubmitting || isDeleting}
-                    className={`${secondaryButtonClasses} w-full sm:w-auto cursor-pointer`}
+                    className="w-full sm:w-auto px-5 py-2.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#154CB3] focus:ring-offset-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
                   >
                     Cancel
                   </button>
+                  
                   {isEditMode && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={openDeleteConfirmation}
-                        disabled={
-                          isDeleting || isSubmittingProp || rhfIsSubmitting
-                        }
-                        className="cursor-pointer px-4 sm:px-5 py-2 sm:py-3 rounded-full border bg-red-600 border-red-700 font-medium text-white hover:bg-red-700 transition-colors text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto"
-                      >
-                        {isDeleting ? "Deleting..." : "Delete event"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={closeRegistration}
-                        disabled={
-                          isSubmittingProp || rhfIsSubmitting || isDeleting
-                        }
-                        className="cursor-pointer px-4 sm:px-5 py-2 sm:py-3 rounded-full border bg-white border-red-400 font-medium text-red-500 hover:bg-red-50 transition-colors text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto"
-                      >
-                        Close registrations
-                      </button>
+                    <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
                       {onToggleArchive && (
                         <button
                           type="button"
                           onClick={onToggleArchive}
                           disabled={isArchiveUpdating || isSubmittingProp || rhfIsSubmitting || isDeleting}
-                          className={`cursor-pointer px-4 sm:px-5 py-2 sm:py-3 rounded-full border font-medium text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors w-full sm:w-auto ${
+                          className={`w-full sm:w-auto px-4 py-2.5 text-sm font-medium rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed ${
                             isArchiveUpdating || isSubmittingProp || rhfIsSubmitting || isDeleting
-                              ? "bg-slate-200 text-slate-500 border-slate-300 cursor-not-allowed"
+                              ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
                               : isArchived
-                                ? "bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200 focus:ring-emerald-500"
-                                : "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200 focus:ring-amber-500"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 focus:ring-emerald-500"
+                                : "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 focus:ring-amber-500"
                           }`}
                         >
-                          {isArchiveUpdating ? "Saving..." : isArchived ? "Unarchive Event" : "Archive Event"}
+                          {isArchiveUpdating ? "Saving..." : isArchived ? "Unarchive" : "Archive"}
                         </button>
                       )}
-                    </>
+                      <button
+                        type="button"
+                        onClick={closeRegistration}
+                        disabled={isSubmittingProp || rhfIsSubmitting || isDeleting}
+                        className="w-full sm:w-auto px-4 py-2.5 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+                      >
+                        Close Registrations
+                      </button>
+                      <button
+                        type="button"
+                        onClick={openDeleteConfirmation}
+                        disabled={isDeleting || isSubmittingProp || rhfIsSubmitting}
+                        className="w-full sm:w-auto px-4 py-2.5 border border-red-300 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+                      >
+                        {isDeleting ? "Deleting..." : "Delete"}
+                      </button>
+                    </div>
                   )}
+                  
                   <button
                     type="submit"
                     disabled={isSubmittingProp || rhfIsSubmitting || isDeleting}
-                    className={`${primaryButtonClasses} w-full sm:w-auto cursor-pointer`}
+                    className="w-full sm:w-auto px-6 py-2.5 bg-[#154CB3] text-white text-sm font-medium rounded-lg hover:bg-[#0f3a7a] focus:outline-none focus:ring-2 focus:ring-[#154CB3] focus:ring-offset-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
                   >
                     {isSubmittingProp || rhfIsSubmitting
                       ? isEditMode
                         ? "Updating..."
                         : "Publishing..."
                       : isEditMode
-                      ? "Update event"
-                      : "Publish event"}
+                      ? "Update Event"
+                      : "Publish Event"}
                   </button>
                 </div>
               </form>
