@@ -79,6 +79,58 @@ const parseComparableDate = (value) => {
 };
 
 const isMissingColumnError = (error) => String(error?.code || "") === "42703";
+const isMissingRelationError = (error) => {
+  const message = String(error?.message || "").toLowerCase();
+  return String(error?.code || "") === "42P01" || (message.includes("relation") && message.includes("does not exist"));
+};
+const FEST_TABLE_CANDIDATES = ["fests", "fest"];
+const resolveFestTableCandidates = (primaryTable) =>
+  Array.from(new Set([primaryTable, ...FEST_TABLE_CANDIDATES].filter(Boolean)));
+
+const getMergedFestsFromCandidates = async (queryOptions, primaryTable) => {
+  const tables = resolveFestTableCandidates(primaryTable);
+  const festById = new Map();
+
+  for (const tableName of tables) {
+    try {
+      const rows = await queryAll(tableName, queryOptions);
+      for (const fest of rows || []) {
+        const key = String(fest?.fest_id || "").trim();
+        if (!key) continue;
+        if (!festById.has(key)) {
+          festById.set(key, fest);
+        }
+      }
+    } catch (error) {
+      if (isMissingRelationError(error)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  return Array.from(festById.values());
+};
+
+const getFestByIdFromCandidates = async (festId, primaryTable) => {
+  const tables = resolveFestTableCandidates(primaryTable);
+
+  for (const tableName of tables) {
+    try {
+      const fest = await queryOne(tableName, { where: { fest_id: festId } });
+      if (fest) {
+        return fest;
+      }
+    } catch (error) {
+      if (isMissingRelationError(error)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  return null;
+};
 
 const mapFestResponse = (fest) => {
   if (!fest) return fest;
@@ -121,7 +173,7 @@ router.get("/", optionalAuth, checkRoleExpiration, async (req, res) => {
     }
 
     console.log(`Fetching fests with status: ${status || 'all'}...`);
-    const fests = await queryAll(festTable, queryOptions);
+    const fests = await getMergedFestsFromCandidates(queryOptions, festTable);
 
     const events = await queryAll("events", { select: "event_id, fest" });
     const registrations = await queryAll("registrations", { select: "event_id" });
@@ -309,7 +361,7 @@ router.get("/:festId", optionalAuth, checkRoleExpiration, async (req, res) => {
     const festTable = await getFestTableForDatabase(queryAll);
     
     console.log(`[Fest GET] Querying ${festTable} table for fest_id: ${festSlug}`);
-    const fest = await queryOne(festTable, { where: { fest_id: festSlug } });
+    const fest = await getFestByIdFromCandidates(festSlug, festTable);
 
     if (!fest) {
       console.warn(`[Fest GET] Fest not found: ${festSlug}`);
