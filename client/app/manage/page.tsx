@@ -330,8 +330,10 @@ export default function ManageDashboard() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [archiveOverrides, setArchiveOverrides] = useState<Record<string, { is_archived: boolean; archived_at: string | null }>>({});
   const [archiveUpdatingIds, setArchiveUpdatingIds] = useState<Set<string>>(new Set());
+  const [localArchivedIds, setLocalArchivedIds] = useState<Set<string>>(new Set());
   const [festArchiveOverrides, setFestArchiveOverrides] = useState<Record<string, { is_archived: boolean; archived_at: string | null }>>({});
   const [festArchiveUpdatingIds, setFestArchiveUpdatingIds] = useState<Set<string>>(new Set());
+  const [localFestArchivedIds, setLocalFestArchivedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -792,8 +794,11 @@ export default function ManageDashboard() {
   };
 
   const handleToggleArchive = async (eventId: string, shouldArchive: boolean) => {
+    console.log(`🔄 Archive toggle initiated: eventId=${eventId}, shouldArchive=${shouldArchive}`);
+    
     if (!authToken) {
       toast.error("Please sign in again to update archive status.");
+      console.error("❌ No access token available");
       return;
     }
 
@@ -805,7 +810,10 @@ export default function ManageDashboard() {
 
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL!;
-      const response = await fetch(`${apiUrl}/api/events/${eventId}/archive`, {
+      const endpoint = `${apiUrl}/api/events/${eventId}/archive`;
+      console.log(`📤 Sending PATCH request to: ${endpoint}`);
+      
+      const response = await fetch(endpoint, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -814,10 +822,13 @@ export default function ManageDashboard() {
         body: JSON.stringify({ archive: shouldArchive }),
       });
 
+      console.log(`📨 Response status: ${response.status}`);
       const payload = await response.json().catch(() => null);
+      console.log(`📋 Response payload:`, payload);
 
       if (!response.ok) {
-        throw new Error(payload?.error || "Failed to update archive status.");
+        const errorMsg = payload?.error || `HTTP ${response.status}: Failed to update archive status.`;
+        throw new Error(errorMsg);
       }
 
       const event = payload?.event as Partial<ContextEvent> | undefined;
@@ -834,13 +845,25 @@ export default function ManageDashboard() {
         },
       }));
 
-      toast.success(shouldArchive ? "Event archived successfully." : "Event moved back to active list.");
+      // Immediately update local state to reflect change in UI
+      if (shouldArchive) {
+        setLocalArchivedIds((prev) => new Set(prev).add(eventId));
+      } else {
+        setLocalArchivedIds((prev) => {
+          const next = new Set(prev);
+          next.delete(eventId);
+          return next;
+        });
+      }
+
+      toast.success(shouldArchive ? "✅ Event archived successfully." : "✅ Event moved back to active list.");
+      console.log(`✅ Archive update successful`);
       
       // Refresh live events to reflect the latest archive status
       await refreshLiveEvents();
     } catch (error: any) {
-      console.error("Archive update failed:", error);
-      toast.error(error?.message || "Unable to update archive status.");
+      console.error("❌ Archive update failed:", error);
+      toast.error(`❌ ${error?.message || "Unable to update archive status."}`);
     } finally {
       setArchiveUpdatingIds((prev) => {
         const next = new Set(prev);
@@ -851,8 +874,11 @@ export default function ManageDashboard() {
   };
 
   const handleToggleArchiveFest = async (festId: string, shouldArchive: boolean) => {
+    console.log(`🔄 Fest archive toggle initiated: festId=${festId}, shouldArchive=${shouldArchive}`);
+    
     if (!authToken) {
       toast.error("Please sign in again to update archive status.");
+      console.error("❌ No access token available");
       return;
     }
 
@@ -864,7 +890,10 @@ export default function ManageDashboard() {
 
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL!;
-      const response = await fetch(`${apiUrl}/api/fests/${festId}/archive`, {
+      const endpoint = `${apiUrl}/api/fests/${festId}/archive`;
+      console.log(`📤 Sending PATCH request to: ${endpoint}`);
+      
+      const response = await fetch(endpoint, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -873,10 +902,13 @@ export default function ManageDashboard() {
         body: JSON.stringify({ archive: shouldArchive }),
       });
 
+      console.log(`📨 Response status: ${response.status}`);
       const payload = await response.json().catch(() => null);
+      console.log(`📋 Response payload:`, payload);
 
       if (!response.ok) {
-        throw new Error(payload?.error || "Failed to update fest archive status.");
+        const errorMsg = payload?.error || `HTTP ${response.status}: Failed to update fest archive status.`;
+        throw new Error(errorMsg);
       }
 
       // Update fest archive state
@@ -887,6 +919,17 @@ export default function ManageDashboard() {
           archived_at: shouldArchive ? new Date().toISOString() : null,
         },
       }));
+
+      // Immediately update local state for fest
+      if (shouldArchive) {
+        setLocalFestArchivedIds((prev) => new Set(prev).add(festId));
+      } else {
+        setLocalFestArchivedIds((prev) => {
+          const next = new Set(prev);
+          next.delete(festId);
+          return next;
+        });
+      }
 
       // Also update all events under this fest
       const nowIso = new Date().toISOString();
@@ -900,6 +943,17 @@ export default function ManageDashboard() {
               is_archived: Boolean(shouldArchive),
               archived_at: shouldArchive ? nowIso : null,
             };
+            
+            // Also update local archived ids for cascading events
+            if (shouldArchive) {
+              setLocalArchivedIds((prev) => new Set(prev).add(event.event_id));
+            } else {
+              setLocalArchivedIds((prev) => {
+                const next = new Set(prev);
+                next.delete(event.event_id);
+                return next;
+              });
+            }
           }
         });
         return updated;
@@ -908,15 +962,16 @@ export default function ManageDashboard() {
       const eventsAffected = payload?.events_affected || 0;
       toast.success(
         shouldArchive
-          ? `Fest and ${eventsAffected} events archived successfully.`
-          : "Fest and associated events moved back to active list."
+          ? `✅ Fest and ${eventsAffected} events archived successfully.`
+          : "✅ Fest and associated events moved back to active list."
       );
+      console.log(`✅ Fest archive update successful: ${eventsAffected} events affected`);
 
       // Refresh live events to reflect the latest archive status for all events under this fest
       await refreshLiveEvents();
     } catch (error: any) {
-      console.error("Fest archive update failed:", error);
-      toast.error(error?.message || "Unable to update fest archive status.");
+      console.error("❌ Fest archive update failed:", error);
+      toast.error(`❌ ${error?.message || "Unable to update fest archive status."}`);
     } finally {
       setFestArchiveUpdatingIds((prev) => {
         const next = new Set(prev);

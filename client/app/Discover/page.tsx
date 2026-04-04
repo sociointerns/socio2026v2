@@ -61,6 +61,7 @@ const DiscoverPageContent = () => {
   const router = useRouter();
   const campusParam = searchParams.get("campus");
   const [archiveUpdatingIds, setArchiveUpdatingIds] = useState<Set<string>>(new Set());
+  const [localArchivedIds, setLocalArchivedIds] = useState<Set<string>>(new Set());
 
   const {
     isLoading: isLoadingEventsFromContext,
@@ -129,10 +130,14 @@ const DiscoverPageContent = () => {
     [allEvents, selectedCampus]
   );
 
-  // Filter out archived events for normal users
+  // Filter out archived events for normal users (including locally archived)
   const filterArchivedForNormalUsers = (events: any[]) => {
-    if (isAdminOrOrganizer) return events;
-    return events.filter(e => !e.is_archived);
+    const filtered = events.filter(e => {
+      if (localArchivedIds.has(String(e.event_id))) return false;
+      if (isAdminOrOrganizer) return true;
+      return !e.is_archived;
+    });
+    return filtered;
   };
 
   const filteredEvents = filterArchivedForNormalUsers(allFilteredEvents);
@@ -190,8 +195,11 @@ const DiscoverPageContent = () => {
   }));
 
   const handleToggleArchive = async (eventId: string, shouldArchive: boolean) => {
+    console.log(`🔄 Archive toggle initiated: eventId=${eventId}, shouldArchive=${shouldArchive}`);
+    
     if (!session?.access_token) {
       toast.error("Please sign in again to update archive status.");
+      console.error("❌ No access token available");
       return;
     }
 
@@ -203,7 +211,10 @@ const DiscoverPageContent = () => {
 
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const response = await fetch(`${apiUrl}/api/events/${eventId}/archive`, {
+      const endpoint = `${apiUrl}/api/events/${eventId}/archive`;
+      console.log(`📤 Sending PATCH request to: ${endpoint}`);
+      
+      const response = await fetch(endpoint, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -212,16 +223,31 @@ const DiscoverPageContent = () => {
         body: JSON.stringify({ archive: shouldArchive }),
       });
 
+      console.log(`📨 Response status: ${response.status}`);
       const payload = await response.json().catch(() => null);
+      console.log(`📋 Response payload:`, payload);
 
       if (!response.ok) {
-        throw new Error(payload?.error || "Failed to update archive status.");
+        const errorMsg = payload?.error || `HTTP ${response.status}: Failed to update archive status.`;
+        throw new Error(errorMsg);
       }
 
-      toast.success(shouldArchive ? "Event archived successfully." : "Event moved back to active list.");
+      // Immediately update local state to reflect change in UI
+      if (shouldArchive) {
+        setLocalArchivedIds((prev) => new Set(prev).add(eventId));
+      } else {
+        setLocalArchivedIds((prev) => {
+          const next = new Set(prev);
+          next.delete(eventId);
+          return next;
+        });
+      }
+
+      toast.success(shouldArchive ? "✅ Event archived successfully." : "✅ Event moved back to active list.");
+      console.log(`✅ Archive update successful`);
     } catch (error: any) {
-      console.error("Archive update failed:", error);
-      toast.error(error?.message || "Unable to update archive status.");
+      console.error("❌ Archive update failed:", error);
+      toast.error(`❌ ${error?.message || "Unable to update archive status."}`);
     } finally {
       setArchiveUpdatingIds((prev) => {
         const next = new Set(prev);
@@ -230,6 +256,7 @@ const DiscoverPageContent = () => {
       });
     }
   };
+
 
   useEffect(() => {
     const campusFromUrl =

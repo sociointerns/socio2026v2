@@ -32,6 +32,8 @@ interface EventData {
   registrationDeadlineISO?: string | null;
   allow_outsiders?: boolean;
   custom_fields?: any[]; // Custom fields created by organizer
+  is_archived?: boolean; // Add archive status to event data
+  archived_at?: string; // When the event was archived
 }
 
 export default function Page() {
@@ -250,6 +252,8 @@ export default function Page() {
         }
         return Array.isArray(fields) ? fields : [];
       })(),
+      is_archived: foundEvent.is_archived ?? false,
+      archived_at: foundEvent.archived_at || undefined,
     };
     
     // DEBUG: Log custom fields to see if they're coming through
@@ -313,6 +317,17 @@ export default function Page() {
         })
         .then(data => {
           if (data.event) {
+            // 🔒 CHECK IF EVENT IS ARCHIVED
+            const isEventArchived = data.event.is_archived === true;
+            const isUserOrganizerOrAdmin = userData?.is_organiser || (userData as any)?.is_admin;
+            
+            if (isEventArchived && !isUserOrganizerOrAdmin && !authIsLoading) {
+              setPageError("This event is archived and not available for viewing.");
+              setEventData(null);
+              setPageLoading(false);
+              return;
+            }
+            
             // Process the event data and update state
             processEventData(data.event);
           } else {
@@ -329,6 +344,17 @@ export default function Page() {
     }
 
     if (foundEvent) {
+      // 🔒 CHECK IF EVENT IS ARCHIVED
+      const isEventArchived = foundEvent.is_archived === true;
+      const isUserOrganizerOrAdmin = userData?.is_organiser || (userData as any)?.is_admin;
+      
+      if (isEventArchived && !isUserOrganizerOrAdmin && !authIsLoading) {
+        setPageError("This event is archived and not available for viewing.");
+        setEventData(null);
+        setPageLoading(false);
+        return;
+      }
+      
       // Process the found event data
       processEventData(foundEvent);
     } else {
