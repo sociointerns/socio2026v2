@@ -809,7 +809,7 @@ export default function ManageDashboard() {
     });
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL!;
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL!.replace(/\/api\/?$/, "");
       const endpoint = `${apiUrl}/api/events/${eventId}/archive`;
       console.log(`📤 Sending PATCH request to: ${endpoint}`);
       
@@ -889,7 +889,7 @@ export default function ManageDashboard() {
     });
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL!;
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL!.replace(/\/api\/?$/, "");
       const endpoint = `${apiUrl}/api/fests/${festId}/archive`;
       console.log(`📤 Sending PATCH request to: ${endpoint}`);
       
