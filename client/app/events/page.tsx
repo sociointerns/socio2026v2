@@ -148,8 +148,7 @@ const EventsPageContent = () => {
     });
 
     try {
-      const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/api\/?$/, "");
-      const endpoint = `${apiUrl}/api/events/${eventId}/archive`;
+      const endpoint = `/api/events/${eventId}/archive`;
       console.log(`📤 Sending PATCH request to: ${endpoint}`);
       
       const response = await fetch(endpoint, {
