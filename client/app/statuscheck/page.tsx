@@ -1,23 +1,39 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import toast from "react-hot-toast";
+import { JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import {
   Activity,
   AlertTriangle,
-  CheckCircle2,
-  Database,
+  Clock3,
+  Copy,
+  Download,
   Gauge,
   RefreshCw,
+  Search,
   ShieldAlert,
-  Timer,
+  Sparkles,
+  TerminalSquare,
   Wrench,
 } from "lucide-react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL!.replace(/\/api\/?$/, "");
+const headingFont = Space_Grotesk({
+  subsets: ["latin"],
+  weight: ["500", "700"],
+});
+
+const monoFont = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "600"],
+});
+
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/api\/?$/, "");
 const MUTATION_CONFIRMATION_PHRASE = "I UNDERSTAND STATUSCHECK MUTATIONS";
+const HISTORY_STORAGE_KEY = "statuscheck:history:v2";
+const SLOW_CHECK_THRESHOLD_MS = 1200;
 
 type TableCount = {
   table: string;
@@ -45,6 +61,13 @@ type CheckItem = {
   details?: Record<string, unknown>;
 };
 
+type LoadFailure = {
+  index: number;
+  status: string | number;
+  durationMs: number;
+  message?: string;
+};
+
 type LoadResult = {
   ok: boolean;
   target: string;
@@ -61,12 +84,13 @@ type LoadResult = {
   maxMs: number;
   p50Ms: number;
   p95Ms: number;
-  failures?: Array<{
-    index: number;
-    status: string | number;
-    durationMs: number;
-    message?: string;
-  }>;
+  failures?: LoadFailure[];
+};
+
+type RouteCoverageItem = {
+  group: string;
+  mount: string;
+  probe: string;
 };
 
 type SummaryResponse = {
@@ -85,11 +109,7 @@ type SummaryResponse = {
     sampleUserEmail: string | null;
   };
   tableCounts: TableCount[];
-  routeCoverage: Array<{
-    group: string;
-    mount: string;
-    probe: string;
-  }>;
+  routeCoverage: RouteCoverageItem[];
   mutatingChecks: {
     enabled: boolean;
     confirmationRequired: string;
@@ -115,11 +135,72 @@ type RunResponse = {
   };
 };
 
+type CheckSectionKey = "endpointChecks" | "fetchDisplayChecks" | "workflowChecks" | "mutationChecks";
+
+type HistoryEntry = {
+  id: string;
+  at: string;
+  kind: "summary" | "full" | "load";
+  ok: boolean;
+  headline: string;
+  detail: string;
+};
+
+type IssueItem = {
+  id: string;
+  title: string;
+  severity: "critical" | "warning";
+  source: string;
+  status: string;
+  durationMs: number;
+};
+
+const SECTION_META: Array<{ key: CheckSectionKey; label: string }> = [
+  { key: "endpointChecks", label: "Endpoint" },
+  { key: "fetchDisplayChecks", label: "Fetch / Display" },
+  { key: "workflowChecks", label: "Workflow" },
+  { key: "mutationChecks", label: "Mutation" },
+];
+
 function cn(...values: Array<string | false | undefined | null>) {
   return values.filter(Boolean).join(" ");
 }
 
-function Badge({ ok, status }: { ok: boolean; status?: string | number }) {
+function formatDateTime(isoValue: string) {
+  const date = new Date(isoValue);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString();
+}
+
+function asPercent(passed: number, total: number) {
+  if (!total) return "0%";
+  return `${Math.round((passed / total) * 100)}%`;
+}
+
+function buildCheckSourceLabel(item: CheckItem) {
+  return [item.method, item.path].filter(Boolean).join(" ") || "internal";
+}
+
+async function copyToClipboard(value: string, successLabel: string) {
+  try {
+    await navigator.clipboard.writeText(value);
+    toast.success(successLabel);
+  } catch (_error) {
+    toast.error("Clipboard is unavailable");
+  }
+}
+
+function downloadJsonFile(fileName: string, payload: unknown) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function Badge({ ok, status }: { ok: boolean; status?: number | string }) {
   if (String(status) === "skipped") {
     return (
       <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
@@ -143,29 +224,42 @@ function Badge({ ok, status }: { ok: boolean; status?: string | number }) {
   );
 }
 
-function BucketCard({ label, data }: { label: string; data: SummaryBucket }) {
+function KpiTile({
+  label,
+  value,
+  helper,
+  accent,
+}: {
+  label: string;
+  value: string;
+  helper: string;
+  accent: "blue" | "green" | "amber" | "slate";
+}) {
+  const accentClass =
+    accent === "green"
+      ? "text-emerald-600"
+      : accent === "amber"
+      ? "text-amber-600"
+      : accent === "slate"
+      ? "text-slate-700"
+      : "text-[#154CB3]";
+
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-1 text-2xl font-bold text-slate-800">{data.passed}/{data.total}</div>
-      <div className="mt-1 text-xs text-slate-500">
-        failed: {data.failed} | skipped: {data.skipped}
-      </div>
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">{label}</div>
+      <div className={cn("mt-1 text-2xl font-bold", accentClass)}>{value}</div>
+      <div className="mt-1 text-xs text-slate-500">{helper}</div>
     </div>
   );
 }
 
 function CheckCard({ item }: { item: CheckItem }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <div className="flex items-start justify-between gap-3">
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-2">
         <div>
           <div className="text-sm font-semibold text-slate-800">{item.name}</div>
-          {(item.method || item.path) && (
-            <div className="mt-1 text-xs text-slate-500">
-              {[item.method, item.path].filter(Boolean).join(" ")}
-            </div>
-          )}
+          <div className="mt-1 text-xs text-slate-500">{buildCheckSourceLabel(item)}</div>
         </div>
         <Badge ok={item.ok} status={item.status} />
       </div>
@@ -184,6 +278,46 @@ function CheckCard({ item }: { item: CheckItem }) {
   );
 }
 
+function collectIssues(runResult: RunResponse | null): IssueItem[] {
+  if (!runResult) return [];
+
+  const allChecks = [
+    ...runResult.endpointChecks,
+    ...runResult.fetchDisplayChecks,
+    ...runResult.workflowChecks,
+    ...runResult.mutationChecks,
+  ];
+
+  const issues: IssueItem[] = [];
+
+  for (const check of allChecks) {
+    const statusLabel = String(check.status ?? "n/a");
+    const baseId = `${check.name}-${check.path || ""}-${statusLabel}`;
+
+    if (!check.ok && statusLabel !== "skipped") {
+      issues.push({
+        id: `${baseId}-fail`,
+        title: check.name,
+        severity: "critical",
+        source: buildCheckSourceLabel(check),
+        status: statusLabel,
+        durationMs: check.durationMs ?? 0,
+      });
+    } else if ((check.durationMs ?? 0) >= SLOW_CHECK_THRESHOLD_MS) {
+      issues.push({
+        id: `${baseId}-slow`,
+        title: `${check.name} latency high`,
+        severity: "warning",
+        source: buildCheckSourceLabel(check),
+        status: statusLabel,
+        durationMs: check.durationMs ?? 0,
+      });
+    }
+  }
+
+  return issues;
+}
+
 export default function StatusCheckPage() {
   const router = useRouter();
   const { isLoading: authLoading, isMasterAdmin, session } = useAuth();
@@ -193,6 +327,12 @@ export default function StatusCheckPage() {
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [runResult, setRunResult] = useState<RunResponse | null>(null);
   const [loadResult, setLoadResult] = useState<LoadResult | null>(null);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+
+  const [activeSection, setActiveSection] = useState<CheckSectionKey>("endpointChecks");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showFailedOnly, setShowFailedOnly] = useState(false);
+  const [autoRefreshSummary, setAutoRefreshSummary] = useState(false);
 
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [runningFull, setRunningFull] = useState(false);
@@ -201,10 +341,31 @@ export default function StatusCheckPage() {
   const [includeMutations, setIncludeMutations] = useState(false);
   const [confirmation, setConfirmation] = useState("");
 
+  const [runLoadAlongsideFull, setRunLoadAlongsideFull] = useState(true);
   const [loadTarget, setLoadTarget] = useState("events");
   const [customPath, setCustomPath] = useState("");
   const [iterations, setIterations] = useState(30);
   const [concurrency, setConcurrency] = useState(4);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      const raw = window.localStorage.getItem(HISTORY_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setHistory(parsed.slice(0, 20));
+      }
+    } catch (_error) {
+      setHistory([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history.slice(0, 20)));
+  }, [history]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -228,31 +389,55 @@ export default function StatusCheckPage() {
     };
   }, [authToken]);
 
-  const fetchSummary = async () => {
-    if (!headers) return;
+  const appendHistory = useCallback((entry: Omit<HistoryEntry, "id">) => {
+    const id = `${entry.kind}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    setHistory((prev) => [{ id, ...entry }, ...prev].slice(0, 20));
+  }, []);
 
-    setLoadingSummary(true);
-    try {
-      const response = await fetch(`${API_URL}/api/statuscheck/summary`, {
-        method: "GET",
-        headers,
-      });
+  const fetchSummary = useCallback(
+    async (options?: { silent?: boolean; record?: boolean }) => {
+      if (!headers) return;
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data?.error || "Failed to load status summary");
+      setLoadingSummary(true);
+      try {
+        const response = await fetch(`${API_URL}/api/statuscheck/summary`, {
+          method: "GET",
+          headers,
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data?.error || "Failed to load status summary");
+        }
+
+        const typedData = data as SummaryResponse;
+        setSummary(typedData);
+
+        if (options?.record) {
+          appendHistory({
+            at: new Date().toISOString(),
+            kind: "summary",
+            ok: typedData.dbHealth.ok,
+            headline: "Summary refreshed",
+            detail: typedData.dbHealth.message,
+          });
+        }
+
+        if (!options?.silent) {
+          toast.success("Status summary refreshed");
+        }
+      } catch (error) {
+        if (!options?.silent) {
+          toast.error(error instanceof Error ? error.message : "Unable to fetch summary");
+        }
+      } finally {
+        setLoadingSummary(false);
       }
+    },
+    [headers, appendHistory]
+  );
 
-      setSummary(data as SummaryResponse);
-      toast.success("Status summary refreshed");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to fetch summary");
-    } finally {
-      setLoadingSummary(false);
-    }
-  };
-
-  const runFullCheck = async () => {
+  const runFullCheck = useCallback(async () => {
     if (!headers) return;
 
     if (includeMutations && confirmation.trim() !== MUTATION_CONFIRMATION_PHRASE) {
@@ -268,6 +453,13 @@ export default function StatusCheckPage() {
         body: JSON.stringify({
           includeMutations,
           confirmation,
+          runLoad: runLoadAlongsideFull,
+          loadConfig: {
+            target: loadTarget,
+            customPath,
+            iterations,
+            concurrency,
+          },
         }),
       });
 
@@ -276,8 +468,27 @@ export default function StatusCheckPage() {
         throw new Error(data?.error || "Failed to run full statuscheck");
       }
 
-      setRunResult(data as RunResponse);
-      if ((data as RunResponse).summary.endpoints.failed > 0) {
+      const typedData = data as RunResponse;
+      setRunResult(typedData);
+      if (typedData.loadCheck) {
+        setLoadResult(typedData.loadCheck);
+      }
+
+      const hasFailures =
+        typedData.summary.endpoints.failed > 0 ||
+        typedData.summary.fetchDisplay.failed > 0 ||
+        typedData.summary.workflows.failed > 0 ||
+        typedData.summary.mutations.failed > 0;
+
+      appendHistory({
+        at: new Date().toISOString(),
+        kind: "full",
+        ok: !hasFailures,
+        headline: hasFailures ? "Full check completed with failures" : "Full check passed",
+        detail: `endpoint pass ${typedData.summary.endpoints.passed}/${typedData.summary.endpoints.total}`,
+      });
+
+      if (hasFailures) {
         toast.error("Statuscheck completed with failing probes");
       } else {
         toast.success("Full statuscheck completed successfully");
@@ -287,9 +498,19 @@ export default function StatusCheckPage() {
     } finally {
       setRunningFull(false);
     }
-  };
+  }, [
+    headers,
+    includeMutations,
+    confirmation,
+    runLoadAlongsideFull,
+    loadTarget,
+    customPath,
+    iterations,
+    concurrency,
+    appendHistory,
+  ]);
 
-  const runLoadCheck = async () => {
+  const runLoadCheck = useCallback(async () => {
     if (!headers) return;
 
     setRunningLoad(true);
@@ -310,27 +531,109 @@ export default function StatusCheckPage() {
         throw new Error(data?.message || data?.error || "Failed to run load check");
       }
 
-      setLoadResult((data?.result || null) as LoadResult | null);
+      const result = (data?.result || null) as LoadResult | null;
+      setLoadResult(result);
+
+      if (result) {
+        appendHistory({
+          at: new Date().toISOString(),
+          kind: "load",
+          ok: result.failureCount === 0,
+          headline: result.failureCount === 0 ? "Load check stable" : "Load check detected failures",
+          detail: `p95 ${result.p95Ms}ms | errors ${result.errorRatePercent}%`,
+        });
+      }
+
       toast.success("Load check completed");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to run load check");
     } finally {
       setRunningLoad(false);
     }
-  };
+  }, [headers, loadTarget, customPath, iterations, concurrency, appendHistory]);
 
   useEffect(() => {
     if (!isMasterAdmin || !headers) return;
-    void fetchSummary();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMasterAdmin, headers]);
+    void fetchSummary({ silent: true });
+  }, [isMasterAdmin, headers, fetchSummary]);
+
+  useEffect(() => {
+    if (!autoRefreshSummary || !headers || !isMasterAdmin) return;
+
+    const timer = window.setInterval(() => {
+      void fetchSummary({ silent: true });
+    }, 45000);
+
+    return () => window.clearInterval(timer);
+  }, [autoRefreshSummary, headers, isMasterAdmin, fetchSummary]);
+
+  const apiBaseForTools = useMemo(() => {
+    if (summary?.apiBaseUrl) return summary.apiBaseUrl;
+    if (API_URL) return API_URL;
+    if (typeof window !== "undefined") return window.location.origin;
+    return "<api-base-url>";
+  }, [summary]);
+
+  const currentChecks = useMemo(() => {
+    if (!runResult) return [] as CheckItem[];
+
+    const source = runResult[activeSection];
+    return source.filter((item) => {
+      const status = String(item.status ?? "").toLowerCase();
+      const isFailed = !item.ok && status !== "skipped";
+      if (showFailedOnly && !isFailed) return false;
+
+      if (!searchQuery.trim()) return true;
+
+      const q = searchQuery.trim().toLowerCase();
+      return [item.name, item.path, item.method, item.message, item.reason]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(q));
+    });
+  }, [runResult, activeSection, showFailedOnly, searchQuery]);
+
+  const issues = useMemo(() => collectIssues(runResult), [runResult]);
+
+  const commandSnippets = useMemo(() => {
+    const targetPath = loadTarget === "custom" ? customPath || "/api/events?page=1&pageSize=5" : loadTarget;
+
+    return [
+      {
+        title: "Fetch Summary",
+        command: `curl -X GET "${apiBaseForTools}/api/statuscheck/summary" -H "Authorization: Bearer <TOKEN>" -H "Accept: application/json"`,
+      },
+      {
+        title: "Run Full Suite",
+        command: `curl -X POST "${apiBaseForTools}/api/statuscheck/run" -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/json" -d '{"includeMutations":false,"runLoad":${runLoadAlongsideFull}}'`,
+      },
+      {
+        title: "Run Load Check",
+        command: `curl -X POST "${apiBaseForTools}/api/statuscheck/load" -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/json" -d '{"target":"${targetPath}","iterations":${iterations},"concurrency":${concurrency}}'`,
+      },
+    ];
+  }, [apiBaseForTools, runLoadAlongsideFull, loadTarget, customPath, iterations, concurrency]);
+
+  const exportSnapshot = useCallback(() => {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      summary,
+      runResult,
+      loadResult,
+      issues,
+      history,
+    };
+
+    downloadJsonFile(`statuscheck-snapshot-${Date.now()}.json`, payload);
+    toast.success("Snapshot exported");
+  }, [summary, runResult, loadResult, issues, history]);
 
   if (authLoading || !authToken) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-100 to-slate-200 p-8">
-        <div className="mx-auto max-w-4xl rounded-2xl border border-slate-200 bg-white p-10 text-center">
+      <div className={cn("min-h-screen p-8", headingFont.className)}>
+        <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_10%_5%,_#dbeafe_0%,_#eef2ff_45%,_#f8fafc_100%)]" />
+        <div className="mx-auto max-w-4xl rounded-3xl border border-slate-200 bg-white/85 p-10 text-center shadow-[0_20px_50px_-30px_rgba(21,76,179,0.65)] backdrop-blur-sm">
           <RefreshCw className="mx-auto h-10 w-10 animate-spin text-[#154CB3]" />
-          <p className="mt-3 text-slate-600">Loading statuscheck control hub...</p>
+          <p className="mt-3 text-slate-600">Loading the developer command center...</p>
         </div>
       </div>
     );
@@ -341,130 +644,308 @@ export default function StatusCheckPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#dbeafe_0%,_#eef2ff_45%,_#f8fafc_100%)] py-8">
-      <div className="mx-auto w-full max-w-7xl px-4 md:px-6">
-        <div className="mb-6 flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white/90 p-6 backdrop-blur-sm md:flex-row md:items-center md:justify-between">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-              <ShieldAlert className="h-3.5 w-3.5" />
-              Masteradmin Only
-            </div>
-            <h1 className="mt-3 text-2xl font-bold text-slate-900 md:text-3xl">StatusCheck Control Hub</h1>
-            <p className="mt-1 text-sm text-slate-600">
-              Endpoint health, workflow verification, fetch/display checks, mutation probes, and load diagnostics.
-            </p>
-          </div>
+    <div className={cn("min-h-screen pb-12", headingFont.className)}>
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_15%_5%,_#e0f2fe_0%,_#e2e8f0_42%,_#f8fafc_100%)]" />
+      <div className="pointer-events-none fixed -left-16 top-32 -z-10 h-72 w-72 rounded-full bg-cyan-300/20 blur-3xl" />
+      <div className="pointer-events-none fixed -right-20 top-10 -z-10 h-80 w-80 rounded-full bg-blue-400/20 blur-3xl" />
 
-          <div className="flex gap-2">
-            <button
-              onClick={() => void fetchSummary()}
-              disabled={loadingSummary}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <RefreshCw className={cn("h-4 w-4", loadingSummary && "animate-spin")} />
-              Refresh Summary
-            </button>
-            <button
-              onClick={() => void runFullCheck()}
-              disabled={runningFull}
-              className="inline-flex items-center gap-2 rounded-lg bg-[#154CB3] px-4 py-2 text-sm font-semibold text-white hover:bg-[#154CB3]/90 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <Activity className={cn("h-4 w-4", runningFull && "animate-pulse")} />
-              Run Full Check
-            </button>
-          </div>
-        </div>
+      <div className="mx-auto w-full max-w-7xl px-4 pt-8 md:px-6">
+        <section className="relative overflow-hidden rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-[0_24px_70px_-40px_rgba(21,76,179,0.6)] backdrop-blur-sm md:p-8">
+          <div className="absolute -right-14 -top-20 h-52 w-52 rounded-full bg-cyan-200/40 blur-3xl" />
+          <div className="absolute -bottom-20 left-10 h-48 w-48 rounded-full bg-blue-200/40 blur-3xl" />
 
-        <div className="grid gap-4 lg:grid-cols-3">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-              <Database className="h-4 w-4 text-[#154CB3]" />
-              Database Health
+          <div className="relative flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                <ShieldAlert className="h-3.5 w-3.5" />
+                Masteradmin Zone
+              </div>
+              <h1 className="mt-3 text-3xl font-bold text-slate-900 md:text-4xl">StatusCheck Developer Command Center</h1>
+              <p className="mt-2 max-w-3xl text-sm text-slate-600 md:text-base">
+                Deep diagnostics for endpoint reliability, workflow health, mutation safety, and performance pressure.
+              </p>
             </div>
-            <div className="mt-3 flex items-center gap-2">
-              {summary?.dbHealth.ok ? (
-                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-              ) : (
-                <AlertTriangle className="h-5 w-5 text-rose-600" />
-              )}
-              <span className="text-sm text-slate-700">{summary?.dbHealth.message || "No summary loaded"}</span>
-            </div>
-            <div className="mt-3 text-xs text-slate-500">checked by: {summary?.requestedBy || "-"}</div>
-            <div className="mt-1 text-xs text-slate-500">at: {summary?.checkedAt || "-"}</div>
-          </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-5">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-              <Wrench className="h-4 w-4 text-[#154CB3]" />
-              Mutation Guard
-            </div>
-            <p className="mt-2 text-xs text-slate-600">
-              Mutating tests are disabled by default. Enable only when you intend to insert and delete synthetic rows.
-            </p>
-            <label className="mt-3 flex items-center gap-2 text-sm font-medium text-slate-700">
-              <input
-                type="checkbox"
-                checked={includeMutations}
-                onChange={(event) => setIncludeMutations(event.target.checked)}
-                className="h-4 w-4 rounded border-slate-300"
-              />
-              Enable insert/delete mutation probes
-            </label>
-            <input
-              type="text"
-              value={confirmation}
-              onChange={(event) => setConfirmation(event.target.value)}
-              placeholder={MUTATION_CONFIRMATION_PHRASE}
-              className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-700 placeholder:text-slate-400 focus:border-[#154CB3] focus:outline-none"
-            />
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-5">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-              <Timer className="h-4 w-4 text-[#154CB3]" />
-              Last Runtime
-            </div>
-            <div className="mt-3 text-2xl font-bold text-slate-900">
-              {runResult ? `${runResult.durationMs}ms` : "-"}
-            </div>
-            <div className="mt-1 text-xs text-slate-500">
-              {runResult ? `completed at ${runResult.checkedAt}` : "Run full check to generate runtime metrics"}
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => void fetchSummary({ record: true })}
+                disabled={loadingSummary}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <RefreshCw className={cn("h-4 w-4", loadingSummary && "animate-spin")} />
+                Refresh
+              </button>
+              <button
+                onClick={() => void runFullCheck()}
+                disabled={runningFull}
+                className="inline-flex items-center gap-2 rounded-lg bg-[#154CB3] px-4 py-2 text-sm font-semibold text-white hover:bg-[#154CB3]/90 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Activity className={cn("h-4 w-4", runningFull && "animate-pulse")} />
+                Run Full
+              </button>
+              <button
+                onClick={exportSnapshot}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <Download className="h-4 w-4" />
+                Export
+              </button>
             </div>
           </div>
-        </div>
+        </section>
 
-        {summary && (
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5">
-            <h2 className="text-sm font-semibold text-slate-800">Table Snapshot</h2>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {summary.tableCounts.map((table) => (
-                <div
-                  key={table.table}
+        <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <KpiTile
+            label="Database"
+            value={summary?.dbHealth.ok ? "Healthy" : "Attention"}
+            helper={summary?.dbHealth.message || "summary pending"}
+            accent={summary?.dbHealth.ok ? "green" : "amber"}
+          />
+          <KpiTile
+            label="Endpoint Pass Rate"
+            value={
+              runResult
+                ? asPercent(runResult.summary.endpoints.passed, runResult.summary.endpoints.total)
+                : "-"
+            }
+            helper={
+              runResult
+                ? `${runResult.summary.endpoints.passed}/${runResult.summary.endpoints.total} endpoint probes`
+                : "run full check"
+            }
+            accent="blue"
+          />
+          <KpiTile
+            label="Last Runtime"
+            value={runResult ? `${runResult.durationMs}ms` : "-"}
+            helper={runResult ? formatDateTime(runResult.checkedAt) : "no recent execution"}
+            accent="slate"
+          />
+          <KpiTile
+            label="Load P95"
+            value={loadResult ? `${loadResult.p95Ms}ms` : "-"}
+            helper={loadResult ? `error rate ${loadResult.errorRatePercent}%` : "run load diagnostics"}
+            accent={loadResult && loadResult.errorRatePercent > 0 ? "amber" : "green"}
+          />
+        </section>
+
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+            <div className="grid flex-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Search Checks
+                <div className="relative mt-1">
+                  <Search className="pointer-events-none absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
+                  <input
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder="name, path, message"
+                    className="w-full rounded-lg border border-slate-300 py-2 pl-8 pr-3 text-sm text-slate-700 focus:border-[#154CB3] focus:outline-none"
+                  />
+                </div>
+              </label>
+
+              <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Active Section
+                <select
+                  value={activeSection}
+                  onChange={(event) => setActiveSection(event.target.value as CheckSectionKey)}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 focus:border-[#154CB3] focus:outline-none"
+                >
+                  {SECTION_META.map((section) => (
+                    <option key={section.key} value={section.key}>
+                      {section.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="flex items-end gap-2">
+                <button
+                  onClick={() => setShowFailedOnly((prev) => !prev)}
                   className={cn(
-                    "rounded-lg border px-3 py-2",
-                    table.ok ? "border-emerald-200 bg-emerald-50" : "border-rose-200 bg-rose-50"
+                    "inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold",
+                    showFailedOnly
+                      ? "border-rose-300 bg-rose-50 text-rose-700"
+                      : "border-slate-300 bg-white text-slate-700"
                   )}
                 >
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">{table.table}</div>
-                  <div className="mt-1 text-lg font-bold text-slate-800">
-                    {table.count === null ? "n/a" : table.count}
-                  </div>
-                  {!table.ok && table.error && <div className="text-xs text-rose-700">{table.error}</div>}
-                </div>
-              ))}
+                  <AlertTriangle className="h-4 w-4" />
+                  Failures Only
+                </button>
+                <button
+                  onClick={() => setAutoRefreshSummary((prev) => !prev)}
+                  className={cn(
+                    "inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold",
+                    autoRefreshSummary
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                      : "border-slate-300 bg-white text-slate-700"
+                  )}
+                >
+                  <Clock3 className="h-4 w-4" />
+                  Auto-refresh 45s
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setHistory([])}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Clear History
+              </button>
+              <button
+                onClick={() => void runFullCheck()}
+                disabled={runningFull}
+                className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {runningFull ? "Running..." : "Execute Full Suite"}
+              </button>
             </div>
           </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            {SECTION_META.map((section) => {
+              const isActive = activeSection === section.key;
+              const bucket = runResult?.summary[
+                section.key === "endpointChecks"
+                  ? "endpoints"
+                  : section.key === "fetchDisplayChecks"
+                  ? "fetchDisplay"
+                  : section.key === "workflowChecks"
+                  ? "workflows"
+                  : "mutations"
+              ];
+
+              return (
+                <button
+                  key={section.key}
+                  onClick={() => setActiveSection(section.key)}
+                  className={cn(
+                    "rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
+                    isActive
+                      ? "border-[#154CB3] bg-[#154CB3] text-white"
+                      : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                  )}
+                >
+                  {section.label}
+                  {bucket ? ` (${bucket.passed}/${bucket.total})` : ""}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        {summary && (
+          <section className="mt-6 grid gap-4 lg:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-slate-700">Route Coverage Matrix</h2>
+                <button
+                  onClick={() => void copyToClipboard(summary.apiBaseUrl, "API base copied")}
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  Copy Base
+                </button>
+              </div>
+              <p className={cn("mt-1 text-xs text-slate-500", monoFont.className)}>{summary.apiBaseUrl}</p>
+
+              <div className="mt-3 grid gap-2 md:grid-cols-2">
+                {summary.routeCoverage.map((entry) => (
+                  <div key={entry.group} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-600">{entry.group}</div>
+                    <div className={cn("mt-1 text-xs text-slate-700", monoFont.className)}>{entry.mount}</div>
+                    <div className="mt-1 text-[11px] text-slate-500">probe: {entry.probe}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-slate-700">Data Snapshot</h2>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {summary.tableCounts.map((table) => (
+                  <div
+                    key={table.table}
+                    className={cn(
+                      "rounded-lg border px-3 py-2",
+                      table.ok ? "border-emerald-200 bg-emerald-50" : "border-rose-200 bg-rose-50"
+                    )}
+                  >
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-600">{table.table}</div>
+                    <div className="mt-1 text-lg font-bold text-slate-800">{table.count === null ? "n/a" : table.count}</div>
+                    {!table.ok && table.error && <div className="text-xs text-rose-700">{table.error}</div>}
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                <div className="font-semibold text-slate-700">Sample IDs</div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className={monoFont.className}>event: {summary.sampleRows.sampleEventId || "n/a"}</span>
+                  {summary.sampleRows.sampleEventId && (
+                    <button
+                      onClick={() => void copyToClipboard(summary.sampleRows.sampleEventId!, "Sample event ID copied")}
+                      className="rounded-md border border-slate-300 px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-white"
+                    >
+                      Copy
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className={monoFont.className}>fest: {summary.sampleRows.sampleFestId || "n/a"}</span>
+                  {summary.sampleRows.sampleFestId && (
+                    <button
+                      onClick={() => void copyToClipboard(summary.sampleRows.sampleFestId!, "Sample fest ID copied")}
+                      className="rounded-md border border-slate-300 px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-white"
+                    >
+                      Copy
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
         )}
 
-        <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5">
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h2 className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-[0.12em] text-slate-700">
+              <TerminalSquare className="h-4 w-4" />
+              Developer Quick Commands
+            </h2>
+            <Sparkles className="h-4 w-4 text-[#154CB3]" />
+          </div>
+          <div className="mt-3 grid gap-3 lg:grid-cols-3">
+            {commandSnippets.map((snippet) => (
+              <div key={snippet.title} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">{snippet.title}</div>
+                <pre className={cn("overflow-x-auto whitespace-pre-wrap rounded-md bg-slate-900/95 p-2 text-[11px] text-slate-100", monoFont.className)}>
+                  {snippet.command}
+                </pre>
+                <button
+                  onClick={() => void copyToClipboard(snippet.command, `${snippet.title} copied`)}
+                  className="mt-2 inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  Copy
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-end">
             <div className="grid flex-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <label className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+              <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
                 Load Target
                 <select
                   value={loadTarget}
                   onChange={(event) => setLoadTarget(event.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700"
                 >
                   <option value="events">events</option>
                   <option value="fests">fests</option>
@@ -476,8 +957,7 @@ export default function StatusCheckPage() {
                   <option value="custom">custom path</option>
                 </select>
               </label>
-
-              <label className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+              <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
                 Iterations
                 <input
                   type="number"
@@ -485,11 +965,10 @@ export default function StatusCheckPage() {
                   max={120}
                   value={iterations}
                   onChange={(event) => setIterations(Number(event.target.value))}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700"
                 />
               </label>
-
-              <label className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+              <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
                 Concurrency
                 <input
                   type="number"
@@ -497,105 +976,211 @@ export default function StatusCheckPage() {
                   max={12}
                   value={concurrency}
                   onChange={(event) => setConcurrency(Number(event.target.value))}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700"
                 />
               </label>
-
-              <label className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+              <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
                 Custom Path
                 <input
                   type="text"
                   value={customPath}
                   onChange={(event) => setCustomPath(event.target.value)}
                   placeholder="/api/events?page=1&pageSize=5"
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700"
                 />
               </label>
             </div>
 
-            <button
-              onClick={() => void runLoadCheck()}
-              disabled={runningLoad}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <Gauge className={cn("h-4 w-4", runningLoad && "animate-pulse")} />
-              Run Load Check
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={runLoadAlongsideFull}
+                  onChange={(event) => setRunLoadAlongsideFull(event.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300"
+                />
+                Include load in full run
+              </label>
+              <button
+                onClick={() => void runLoadCheck()}
+                disabled={runningLoad}
+                className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Gauge className={cn("h-4 w-4", runningLoad && "animate-pulse")} />
+                {runningLoad ? "Running..." : "Run Load"}
+              </button>
+            </div>
           </div>
 
           {loadResult && (
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="text-xs text-slate-500">error rate</div>
-                <div className="text-xl font-bold text-slate-800">{loadResult.errorRatePercent}%</div>
+            <div className="mt-4 space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+                <KpiTile
+                  label="Error Rate"
+                  value={`${loadResult.errorRatePercent}%`}
+                  helper="request failures"
+                  accent={loadResult.errorRatePercent > 0 ? "amber" : "green"}
+                />
+                <KpiTile label="P50" value={`${loadResult.p50Ms}ms`} helper="median latency" accent="slate" />
+                <KpiTile label="P95" value={`${loadResult.p95Ms}ms`} helper="tail latency" accent="blue" />
+                <KpiTile label="Average" value={`${loadResult.avgMs}ms`} helper="mean response" accent="slate" />
+                <KpiTile
+                  label="Throughput"
+                  value={`${loadResult.successCount}/${loadResult.completed}`}
+                  helper="successful requests"
+                  accent="green"
+                />
+                <KpiTile
+                  label="Total Time"
+                  value={`${loadResult.totalDurationMs}ms`}
+                  helper={loadResult.targetPath}
+                  accent="slate"
+                />
               </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="text-xs text-slate-500">p50</div>
-                <div className="text-xl font-bold text-slate-800">{loadResult.p50Ms}ms</div>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="text-xs text-slate-500">p95</div>
-                <div className="text-xl font-bold text-slate-800">{loadResult.p95Ms}ms</div>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="text-xs text-slate-500">throughput</div>
-                <div className="text-xl font-bold text-slate-800">{loadResult.successCount}/{loadResult.completed}</div>
-              </div>
-            </div>
-          )}
-        </div>
 
-        {runResult && (
-          <>
-            <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <BucketCard label="Endpoint Checks" data={runResult.summary.endpoints} />
-              <BucketCard label="Fetch/Display" data={runResult.summary.fetchDisplay} />
-              <BucketCard label="Workflow Checks" data={runResult.summary.workflows} />
-              <BucketCard label="Mutation Checks" data={runResult.summary.mutations} />
-            </div>
-
-            <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5">
-              <h2 className="text-sm font-semibold text-slate-800">Endpoint Checks</h2>
-              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {runResult.endpointChecks.map((item) => (
-                  <CheckCard key={`endpoint-${item.name}`} item={item} />
-                ))}
-              </div>
-            </section>
-
-            <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5">
-              <h2 className="text-sm font-semibold text-slate-800">Fetch/Display Checks</h2>
-              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {runResult.fetchDisplayChecks.map((item) => (
-                  <CheckCard key={`fetch-${item.name}`} item={item} />
-                ))}
-              </div>
-            </section>
-
-            <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5">
-              <h2 className="text-sm font-semibold text-slate-800">Workflow Checks</h2>
-              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {runResult.workflowChecks.map((item) => (
-                  <CheckCard key={`workflow-${item.name}`} item={item} />
-                ))}
-              </div>
-            </section>
-
-            <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5">
-              <h2 className="text-sm font-semibold text-slate-800">Mutation Checks</h2>
-              {!includeMutations && (
-                <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                  Mutating checks are currently disabled. Enable and confirm the phrase to test insert/delete workflows.
+              {Array.isArray(loadResult.failures) && loadResult.failures.length > 0 && (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 p-3">
+                  <div className="text-xs font-semibold uppercase tracking-[0.12em] text-rose-700">Load Failures</div>
+                  <div className="mt-2 space-y-1 text-xs text-rose-700">
+                    {loadResult.failures.slice(0, 8).map((failure) => (
+                      <div key={`${failure.index}-${failure.status}`}>
+                        #{failure.index} status {String(failure.status)} in {failure.durationMs}ms
+                        {failure.message ? ` (${failure.message})` : ""}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
-              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {runResult.mutationChecks.map((item) => (
-                  <CheckCard key={`mutation-${item.name}`} item={item} />
+            </div>
+          )}
+        </section>
+
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-slate-700">
+              {SECTION_META.find((item) => item.key === activeSection)?.label || "Checks"}
+            </h2>
+            <div className="text-xs text-slate-500">{currentChecks.length} visible checks</div>
+          </div>
+
+          {!runResult ? (
+            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+              Run the full suite to populate this panel.
+            </div>
+          ) : currentChecks.length === 0 ? (
+            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+              No checks matched the current filter.
+            </div>
+          ) : (
+            <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {currentChecks.map((item) => (
+                <CheckCard key={`${item.name}-${item.path || ""}-${String(item.status || "")}`} item={item} />
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="mt-6 grid gap-4 lg:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-slate-700">Incident Feed</h2>
+
+            {issues.length === 0 ? (
+              <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
+                No critical or slow-check incidents in the latest run.
+              </div>
+            ) : (
+              <div className="mt-3 space-y-2">
+                {issues.slice(0, 10).map((issue) => (
+                  <div
+                    key={issue.id}
+                    className={cn(
+                      "rounded-lg border px-3 py-2",
+                      issue.severity === "critical"
+                        ? "border-rose-200 bg-rose-50"
+                        : "border-amber-200 bg-amber-50"
+                    )}
+                  >
+                    <div className="text-sm font-semibold text-slate-800">{issue.title}</div>
+                    <div className="mt-1 text-xs text-slate-600">
+                      {issue.source} | status {issue.status} | {issue.durationMs}ms
+                    </div>
+                  </div>
                 ))}
               </div>
-            </section>
-          </>
-        )}
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-slate-700">Run Timeline</h2>
+
+            {history.length === 0 ? (
+              <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                No run history yet. Refresh summary or run checks to begin tracking.
+              </div>
+            ) : (
+              <div className="mt-3 space-y-2">
+                {history.slice(0, 12).map((entry) => (
+                  <div key={entry.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-sm font-semibold text-slate-800">{entry.headline}</div>
+                      <span
+                        className={cn(
+                          "rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+                          entry.ok
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                            : "border-rose-200 bg-rose-50 text-rose-700"
+                        )}
+                      >
+                        {entry.kind}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-xs text-slate-600">{entry.detail}</div>
+                    <div className="mt-1 text-[11px] text-slate-500">{formatDateTime(entry.at)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-[0.12em] text-slate-700">
+            <Wrench className="h-4 w-4" />
+            Mutation Guard Rail
+          </h2>
+          <p className="mt-2 text-xs text-slate-600">
+            Mutation tests create and clean synthetic fest/event/notification rows. Keep disabled unless explicitly needed.
+          </p>
+
+          <div className="mt-3 grid gap-3 md:grid-cols-[auto,1fr] md:items-center">
+            <label className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
+              <input
+                type="checkbox"
+                checked={includeMutations}
+                onChange={(event) => setIncludeMutations(event.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              Enable mutation checks
+            </label>
+
+            <input
+              type="text"
+              value={confirmation}
+              onChange={(event) => setConfirmation(event.target.value)}
+              placeholder={MUTATION_CONFIRMATION_PHRASE}
+              className={cn(
+                "w-full rounded-lg border px-3 py-2 text-xs placeholder:text-slate-400 focus:outline-none",
+                includeMutations
+                  ? "border-amber-300 bg-amber-50 text-amber-900 focus:border-amber-500"
+                  : "border-slate-300 bg-slate-50 text-slate-700 focus:border-[#154CB3]"
+              )}
+            />
+          </div>
+        </section>
+
+        <div className="mt-4 text-center text-xs text-slate-500">
+          Last summary refresh: {summary ? formatDateTime(summary.checkedAt) : "not available"}
+        </div>
       </div>
     </div>
   );
