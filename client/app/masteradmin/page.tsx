@@ -91,11 +91,17 @@ type Event = {
   title: string;
   organizing_dept: string;
   event_date: string;
+  end_date?: string | null;
   created_by: string;
   created_at: string;
   registration_fee: number;
   registration_count?: number;
   fest?: string | null;
+  is_archived?: boolean | null;
+  archived_at?: string | null;
+  archived_by?: string | null;
+  archived_effective?: boolean | null;
+  archive_source?: "manual" | "auto" | null;
 };
 
 type Fest = {
@@ -103,9 +109,13 @@ type Fest = {
   fest_title: string;
   organizing_dept: string;
   opening_date: string;
+  closing_date?: string | null;
   created_by: string;
   created_at: string;
   registration_count?: number;
+  is_archived?: boolean | null;
+  archived_at?: string | null;
+  archived_by?: string | null;
 };
 
 type Registration = {
@@ -257,9 +267,14 @@ export default function MasterAdminPage() {
   }, [debouncedUserSearch, roleFilter, userSortKey, userSortDir]);
 
   // Event status helper
-  const getEventStatus = (dateStr: string) => {
+  const getEventStatus = (event: Event) => {
+    const isArchived = event.archived_effective === true || event.is_archived === true;
+    if (isArchived) {
+      return { label: "Archived", color: "bg-amber-100 text-amber-700" };
+    }
+
     const now = new Date();
-    const eventDate = new Date(dateStr);
+    const eventDate = new Date(event.event_date);
     const diffMs = eventDate.getTime() - now.getTime();
     const diffDays = diffMs / (1000 * 60 * 60 * 24);
     if (diffDays < -1) return { label: "Past", color: "bg-gray-100 text-gray-600" };
@@ -1223,7 +1238,7 @@ export default function MasterAdminPage() {
                       </thead>
                       <tbody className="divide-y divide-gray-200">
                         {events.map((event) => {
-                          const status = getEventStatus(event.event_date);
+                          const status = getEventStatus(event);
                           return (
                             <tr key={event.event_id} className="hover:bg-gray-50 transition-all duration-200">
                               <td className="px-6 py-4">
@@ -1326,76 +1341,80 @@ export default function MasterAdminPage() {
               ) : (
                 <>
                   <div className="overflow-x-auto">
-                    <table className="w-full">
+                    <table className="w-full min-w-[1080px] table-fixed">
                       <thead className="bg-gray-50 border-b border-gray-200">
                         <tr>
                           <th
                             onClick={() => toggleSort("title", festSortKey, festSortDir, setFestSortKey, setFestSortDir)}
-                            className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100 select-none"
+                            className="w-[24%] px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100 select-none"
                           >
                             Fest <SortIcon active={festSortKey === "title"} dir={festSortDir} />
                           </th>
                           <th
                             onClick={() => toggleSort("dept", festSortKey, festSortDir, setFestSortKey, setFestSortDir)}
-                            className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100 select-none"
+                            className="w-[24%] px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100 select-none"
                           >
                             Department <SortIcon active={festSortKey === "dept"} dir={festSortDir} />
                           </th>
                           <th
                             onClick={() => toggleSort("date", festSortKey, festSortDir, setFestSortKey, setFestSortDir)}
-                            className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100 select-none"
+                            className="w-[12%] px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100 select-none"
                           >
                             Opening Date <SortIcon active={festSortKey === "date"} dir={festSortDir} />
                           </th>
                           <th
                             onClick={() => toggleSort("registrations", festSortKey, festSortDir, setFestSortKey, setFestSortDir)}
-                            className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100 select-none"
+                            className="w-[14%] px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100 select-none"
                           >
                             Registrations <SortIcon active={festSortKey === "registrations"} dir={festSortDir} />
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Created By</th>
-                          <th className="px-6 py-3 text-right text-xs font-semibold text-gray-700 uppercase">Actions</th>
+                          <th className="w-[16%] px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase">Created By</th>
+                          <th className="w-[20%] px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
                         {fests.map((fest) => (
                           <tr key={fest.fest_id} className="hover:bg-gray-50 transition-all duration-200">
-                            <td className="px-6 py-4">
-                              <div className="font-semibold text-gray-900">{fest.fest_title}</div>
-                              <div className="text-sm text-gray-500">ID: {fest.fest_id}</div>
+                            <td className="px-6 py-5 align-top">
+                              <div className="font-semibold text-gray-900 leading-6 break-words">{fest.fest_title}</div>
+                              <div className="text-xs text-gray-500 mt-1">ID: {fest.fest_id}</div>
                             </td>
-                            <td className="px-6 py-4 text-sm text-gray-600 font-medium">{fest.organizing_dept}</td>
-                            <td className="px-6 py-4 text-sm text-gray-600">
+                            <td className="px-6 py-5 text-sm text-gray-600 font-medium leading-6 align-top break-words">{fest.organizing_dept}</td>
+                            <td className="px-6 py-5 text-sm text-gray-600 align-top whitespace-nowrap">
                               {new Date(fest.opening_date).toLocaleDateString('en-US', { 
                                 month: 'short', 
                                 day: 'numeric', 
                                 year: 'numeric' 
                               })}
                             </td>
-                            <td className="px-6 py-4">
-                              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-md text-sm font-medium bg-blue-100 text-blue-800">
-                                <span className="h-1.5 w-1.5 rounded-full bg-blue-600"></span>
-                                {fest.registration_count || 0} Registered
+                            <td className="px-6 py-5 align-top">
+                              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-md text-sm font-medium bg-green-100 text-green-800">
+                                <span className="h-1.5 w-1.5 rounded-full bg-green-600"></span>
+                                {fest.registration_count || 0}
                               </span>
                             </td>
-                            <td className="px-6 py-4 text-sm text-gray-600">{fest.created_by}</td>
-                            <td className="px-6 py-4 text-right">
-                              <div className="flex items-center justify-end gap-2">
+                            <td className="px-6 py-5 text-sm text-gray-600 align-top">
+                              <span className="inline-block max-w-full truncate" title={fest.created_by}>
+                                {fest.created_by}
+                              </span>
+                            </td>
+                            <td className="px-6 py-5 text-right align-top">
+                              <div className="flex flex-wrap items-center justify-end gap-2">
                                 <a
                                   href={`/edit/fest/${fest.fest_id}`}
-                                  className="px-4 py-2 bg-[#154CB3] text-white text-sm font-medium rounded-lg hover:bg-[#154cb3df] hover:-translate-y-0.5 transition-all"
+                                  className="px-3.5 py-1.5 bg-[#154CB3] text-white text-xs font-semibold rounded-lg hover:bg-[#154cb3df] hover:-translate-y-0.5 transition-all"
                                 >
                                   Edit
                                 </a>
                                 <a
                                   href={`/fest/${fest.fest_id}`}
-                                  className="px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-lg hover:bg-gray-700 hover:-translate-y-0.5 transition-all"
+                                  className="px-3.5 py-1.5 bg-gray-600 text-white text-xs font-semibold rounded-lg hover:bg-gray-700 hover:-translate-y-0.5 transition-all"
                                 >
                                   View
                                 </a>
                                 <button
                                   onClick={() => setShowDeleteFestConfirm(fest.fest_id)}
-                                  className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 hover:-translate-y-0.5 transition-all"
+                                  className="px-3.5 py-1.5 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 hover:-translate-y-0.5 transition-all"
                                 >
                                   Delete
                                 </button>

@@ -316,6 +316,11 @@ export default function ChatBot() {
     setIsOpen(true);
   };
 
+  const isStatuscheckPage = pathname.startsWith("/statuscheck");
+  if (isStatuscheckPage) {
+    return null;
+  }
+
   return (
     <>
       {isOpen && (

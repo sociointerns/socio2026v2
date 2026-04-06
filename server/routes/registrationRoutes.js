@@ -178,6 +178,15 @@ router.post("/register", async (req, res) => {
       return res.status(404).json({ error: "Event not found" });
     }
     
+    // 🔒 CHECK IF EVENT IS ARCHIVED (BLOCK REGISTRATIONS FOR ARCHIVED EVENTS)
+    if (event.is_archived) {
+      return res.status(403).json({
+        error: "Event is archived",
+        details: "This event has been archived and is no longer accepting registrations.",
+        code: "EVENT_ARCHIVED"
+      });
+    }
+    
     // ===== REGISTRATION TIME VALIDATIONS =====
     const currentDate = new Date();
     

@@ -40,11 +40,12 @@ export const EventCard = ({
   onArchiveToggle,
   isArchiveLoading = false,
 }: EventCardProps) => {
-  const { userData, isLoading: authLoading } = useAuth();
+  const { userData, session, isLoading: authLoading } = useAuth();
 
   const isOutsiderUser = userData?.organization_type === "outsider";
   const showOutsiderBadge = !authLoading && isOutsiderUser && Boolean(allowOutsiders);
-  const isAdminOrOrganizer = !authLoading && (userData?.is_organiser || (userData as any)?.is_admin);
+  const isAdminOrOrganizer = !authLoading && (userData?.is_organiser || userData?.is_masteradmin);
+  const reminderAuthToken = authToken || session?.access_token || "";
 
   const eventSlug = idForLink;
   // No longer generating slugs from title; always use the actual event_id
@@ -61,7 +62,7 @@ export const EventCard = ({
           {showOutsiderBadge && (
             <div className="absolute top-2 left-2 z-10">
               <span className="text-xs font-semibold px-2 py-1 rounded-full bg-[#F59E0B] text-black shadow-sm">
-                PUBLIC
+                Public
               </span>
             </div>
           )}
@@ -281,11 +282,19 @@ export const EventCard = ({
                 {isArchiveLoading ? "Saving..." : isArchived ? "Unarchive" : "Archive"}
               </button>
             )}
-            {authToken && baseUrl === "edit/event" && (
+            {eventSlug && (
+              <Link
+                href={`/edit/event/${eventSlug}`}
+                className="inline-flex items-center gap-1 text-sm text-[#154CB3] font-semibold hover:underline"
+              >
+                Edit
+              </Link>
+            )}
+            {reminderAuthToken && (
               <EventReminderButton
                 eventId={eventSlug || ""}
                 eventTitle={title}
-                authToken={authToken}
+                authToken={reminderAuthToken}
               />
             )}
           </div>

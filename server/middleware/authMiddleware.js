@@ -190,8 +190,14 @@ export const requireOwnership = (table, paramName, ownerField = 'auth_uuid') => 
     try {
       const resolveResource = async (tableName, whereClause) => {
         const isMissingRelationError = (error) => {
+          const code = String(error?.code || '').toUpperCase();
           const message = String(error?.message || '').toLowerCase();
-          return error?.code === '42P01' || (message.includes('relation') && message.includes('does not exist'));
+          return (
+            code === '42P01' ||
+            code === 'PGRST205' ||
+            (message.includes('relation') && message.includes('does not exist')) ||
+            (message.includes('could not find') && message.includes('schema cache'))
+          );
         };
 
         try {
@@ -293,8 +299,7 @@ export const requireOwnership = (table, paramName, ownerField = 'auth_uuid') => 
           req.resource = resource;
           return next();
         } else {
-          console.log(`[Ownership] ❌ FAILED: auth_uuid mismatch (${resource.auth_uuid} !== ${req.userId})`);
-          return res.status(403).json({ error: 'Access denied: You can only modify your own resources' });
+          console.log(`[Ownership] ⚠️ auth_uuid mismatch (${resource.auth_uuid} !== ${req.userId}), checking legacy created_by fallback...`);
         }
       }
       
@@ -365,6 +370,16 @@ export const optionalAuth = async (req, res, next) => {
       if (!error && user) {
         req.user = user;
         req.userId = user.id;
+
+        // Best-effort user profile hydration for role-aware optional routes.
+        try {
+          const localUser = await queryOne('users', { where: { auth_uuid: user.id } });
+          if (localUser) {
+            req.userInfo = localUser;
+          }
+        } catch (dbError) {
+          console.warn('[optionalAuth] Failed to hydrate req.userInfo:', dbError?.message || dbError);
+        }
       }
     }
     

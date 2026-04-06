@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import EventForm from "@/app/_components/Admin/ManageEvent";
 import { EventFormData } from "@/app/lib/eventFormSchema";
 import { SubmitHandler } from "react-hook-form";
@@ -9,12 +9,17 @@ import { useRouter } from "next/navigation";
 export default function CreateEventPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const supabase = useMemo(() => {
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return null;
+    }
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL!.replace(/\/api\/?$/, "");
+    return createBrowserClient(supabaseUrl, supabaseAnonKey);
+  }, [supabaseAnonKey, supabaseUrl]);
+
+  const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/api\/?$/, "");
 
   const handleCreateEvent: SubmitHandler<EventFormData> = async (
     dataFromHookForm
@@ -25,6 +30,13 @@ export default function CreateEventPage() {
     );
 
     setIsSubmitting(true);
+
+    if (!supabase) {
+      alert("Supabase configuration is missing. Please contact support.");
+      setIsSubmitting(false);
+      router.replace('/auth');
+      return;
+    }
 
     let token;
     let userEmail: string | undefined;

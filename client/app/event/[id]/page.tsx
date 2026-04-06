@@ -32,6 +32,8 @@ interface EventData {
   registrationDeadlineISO?: string | null;
   allow_outsiders?: boolean;
   custom_fields?: any[]; // Custom fields created by organizer
+  is_archived?: boolean; // Add archive status to event data
+  archived_at?: string; // When the event was archived
 }
 
 export default function Page() {
@@ -46,7 +48,7 @@ export default function Page() {
     isLoading: contextIsLoading,
     error: contextError,
   } = useEvents();
-  const { userData, isLoading: authIsLoading } = useAuth();
+  const { session, userData, isLoading: authIsLoading } = useAuth();
 
   const detailsRef = useRef<HTMLDivElement>(null);
   const rulesRef = useRef<HTMLDivElement>(null);
@@ -250,6 +252,8 @@ export default function Page() {
         }
         return Array.isArray(fields) ? fields : [];
       })(),
+      is_archived: foundEvent.is_archived ?? false,
+      archived_at: foundEvent.archived_at || undefined,
     };
     
     // DEBUG: Log custom fields to see if they're coming through
@@ -304,7 +308,13 @@ export default function Page() {
       setPageLoading(true);
       
       // Make direct API call to fetch the event
-      fetch(`${API_URL}/api/events/${currentEventIdString}`)
+      fetch(`${API_URL}/api/events/${currentEventIdString}`, {
+        headers: session?.access_token
+          ? {
+              Authorization: `Bearer ${session.access_token}`,
+            }
+          : undefined,
+      })
         .then(response => {
           if (!response.ok) {
             throw new Error(`Event with ID "${currentEventIdString}" not found.`);
@@ -313,6 +323,22 @@ export default function Page() {
         })
         .then(data => {
           if (data.event) {
+            // 🔒 CHECK IF EVENT IS ARCHIVED
+            const isEventArchived = data.event.is_archived === true;
+            const isUserOrganizerOrAdmin = Boolean(userData?.is_organiser || userData?.is_masteradmin);
+
+            if (isEventArchived && authIsLoading) {
+              setPageLoading(true);
+              return;
+            }
+            
+            if (isEventArchived && !isUserOrganizerOrAdmin) {
+              setPageError("This event is archived and not available for viewing.");
+              setEventData(null);
+              setPageLoading(false);
+              return;
+            }
+            
             // Process the event data and update state
             processEventData(data.event);
           } else {
@@ -329,6 +355,22 @@ export default function Page() {
     }
 
     if (foundEvent) {
+      // 🔒 CHECK IF EVENT IS ARCHIVED
+      const isEventArchived = foundEvent.is_archived === true;
+      const isUserOrganizerOrAdmin = Boolean(userData?.is_organiser || userData?.is_masteradmin);
+
+      if (isEventArchived && authIsLoading) {
+        setPageLoading(true);
+        return;
+      }
+      
+      if (isEventArchived && !isUserOrganizerOrAdmin) {
+        setPageError("This event is archived and not available for viewing.");
+        setEventData(null);
+        setPageLoading(false);
+        return;
+      }
+      
       // Process the found event data
       processEventData(foundEvent);
     } else {
@@ -338,7 +380,7 @@ export default function Page() {
       setEventData(null);
       setPageLoading(false);
     }
-  }, [eventIdSlug, allEvents, contextIsLoading, contextError]);
+  }, [eventIdSlug, allEvents, contextIsLoading, contextError, authIsLoading, userData, session?.access_token]);
 
   useEffect(() => {
     if (userData && userData.register_number && !authIsLoading) {
@@ -684,7 +726,7 @@ export default function Page() {
               <div className="flex flex-wrap gap-2 mb-2 items-center sm:justify-start">
                 {showOutsiderBadge && (
                   <p className="px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm font-semibold bg-[#F59E0B] text-black">
-                    PUBLIC
+                    Public
                   </p>
                 )}
                 {(eventData.tags || []).map((tag, index) => {

@@ -97,6 +97,11 @@ export const metadata: Metadata = {
   },
   manifest: "/manifest.json",
   category: "education",
+  icons: {
+    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
+    apple: [{ url: "/favicon.svg", type: "image/svg+xml" }],
+    shortcut: [{ url: "/favicon.svg", type: "image/svg+xml" }],
+  },
 };
 
 const deriveTags = (event: FetchedEvent): string[] => {
@@ -144,7 +149,6 @@ const getUpcomingEventsFromDataset = (events: FetchedEvent[]): FetchedEvent[] =>
 
   return [...(events || [])]
     .filter((event) => {
-      if (Boolean((event as any).is_archived)) return false;
       const eventDate = parseComparableDate(event.event_date);
       if (!eventDate) return false;
       return eventDate.getTime() >= today.getTime();
@@ -201,15 +205,20 @@ const transformToCarouselImage = (
 
 // Create a singleton Supabase client for server-side operations
 let serverSupabase: SupabaseClient | null = null;
+let missingSupabaseConfigWarned = false;
 
-function getServerSupabase(): SupabaseClient {
+function getServerSupabase(): SupabaseClient | null {
   if (serverSupabase) return serverSupabase;
   
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   
   if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error("Supabase configuration missing");
+    if (!missingSupabaseConfigWarned) {
+      console.warn("Supabase configuration missing during build/runtime; event prefetch will be skipped.");
+      missingSupabaseConfigWarned = true;
+    }
+    return null;
   }
   
   serverSupabase = createClient(supabaseUrl, supabaseAnonKey);
@@ -218,6 +227,9 @@ function getServerSupabase(): SupabaseClient {
 
 async function fetchEventsFromSupabase() {
   const supabase = getServerSupabase();
+  if (!supabase) {
+    return [] as FetchedEvent[];
+  }
   
   const { data, error: supabaseError } = await supabase
     .from("events")
@@ -233,6 +245,9 @@ async function fetchEventsFromSupabase() {
 
 async function fetchUpcomingEventsFromSupabase() {
   const supabase = getServerSupabase();
+  if (!supabase) {
+    return [] as FetchedEvent[];
+  }
   const todayIso = new Date().toISOString().slice(0, 10);
 
   const { data, error: supabaseError } = await supabase

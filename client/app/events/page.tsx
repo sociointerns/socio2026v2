@@ -56,6 +56,7 @@ const EventsPageContent = () => {
   const [searchQuery, setSearchQuery] = useState(searchParam);
   const [currentPage, setCurrentPage] = useState(1);
   const [archiveUpdatingIds, setArchiveUpdatingIds] = useState<Set<string>>(new Set());
+  const [localArchivedIds, setLocalArchivedIds] = useState<Set<string>>(new Set());
 
   const { allEvents, isLoading, error } = useEvents();
   const { userData, session } = useAuth();
@@ -127,13 +128,16 @@ const EventsPageContent = () => {
     return () => window.clearTimeout(timeoutId);
   }, [categoryParam, router, searchParam, searchQuery]);
 
-  const isAdminOrOrganizer = userData?.is_organiser || (userData as any)?.is_admin;
+  const isAdminOrOrganizer = Boolean(userData?.is_organiser || userData?.is_masteradmin);
   
   const eventsToFilter = Array.isArray(allEvents) ? allEvents : [];
 
   const handleToggleArchive = async (eventId: string, shouldArchive: boolean) => {
+    console.log(`🔄 Archive toggle initiated: eventId=${eventId}, shouldArchive=${shouldArchive}`);
+    
     if (!session?.access_token) {
       toast.error("Please sign in again to update archive status.");
+      console.error("❌ No access token available");
       return;
     }
 
@@ -144,8 +148,10 @@ const EventsPageContent = () => {
     });
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const response = await fetch(`${apiUrl}/api/events/${eventId}/archive`, {
+      const endpoint = `/api/events/${eventId}/archive`;
+      console.log(`📤 Sending PATCH request to: ${endpoint}`);
+      
+      const response = await fetch(endpoint, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -154,16 +160,31 @@ const EventsPageContent = () => {
         body: JSON.stringify({ archive: shouldArchive }),
       });
 
+      console.log(`📨 Response status: ${response.status}`);
       const payload = await response.json().catch(() => null);
+      console.log(`📋 Response payload:`, payload);
 
       if (!response.ok) {
-        throw new Error(payload?.error || "Failed to update archive status.");
+        const errorMsg = payload?.error || `HTTP ${response.status}: Failed to update archive status.`;
+        throw new Error(errorMsg);
       }
 
-      toast.success(shouldArchive ? "Event archived successfully." : "Event moved back to active list.");
+      // Immediately update local state to reflect change in UI
+      if (shouldArchive) {
+        setLocalArchivedIds((prev) => new Set(prev).add(eventId));
+      } else {
+        setLocalArchivedIds((prev) => {
+          const next = new Set(prev);
+          next.delete(eventId);
+          return next;
+        });
+      }
+
+      toast.success(shouldArchive ? "✅ Event archived successfully." : "✅ Event moved back to active list.");
+      console.log(`✅ Archive update successful`);
     } catch (error: any) {
-      console.error("Archive update failed:", error);
-      toast.error(error?.message || "Unable to update archive status.");
+      console.error("❌ Archive update failed:", error);
+      toast.error(`❌ ${error?.message || "Unable to update archive status."}`);
     } finally {
       setArchiveUpdatingIds((prev) => {
         const next = new Set(prev);
@@ -173,7 +194,10 @@ const EventsPageContent = () => {
     }
   };
   const filteredEvents = (eventsToFilter as FetchedEvent[]).filter((event) => {
-    // Archive filter - hide archived events from normal users
+    // Archive filter - hide archived events from normal users (including locally archived)
+    if (localArchivedIds.has(event.event_id)) {
+      return false;
+    }
     if (!isAdminOrOrganizer && event.is_archived) {
       return false;
     }

@@ -23,6 +23,7 @@ import { pushEventToGated, shouldPushEventToGated, isGatedEnabled } from "../uti
 
 const router = express.Router();
 const debugRoutesEnabled = process.env.NODE_ENV !== "production";
+const MANUAL_UNARCHIVE_OVERRIDE = "system:manual_unarchive_override";
 
 // HEALTH CHECK - Verify Supabase connection
 router.get("/debug/health", async (req, res) => {
@@ -109,23 +110,29 @@ const normalizeFestReference = (value) => {
   return normalized;
 };
 
-const AUTO_ARCHIVE_DAYS = (() => {
-  const parsedDays = Number.parseInt(process.env.EVENT_AUTO_ARCHIVE_DAYS || "15", 10);
-  return Number.isFinite(parsedDays) && parsedDays > 0 ? parsedDays : 15;
-})();
-
-const DAY_IN_MS = 24 * 60 * 60 * 1000;
-
 const getValidDate = (value) => {
   if (!value) return null;
   const parsedDate = new Date(value);
   return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
 };
 
-const isAutoArchivedByDate = (eventDate) => {
-  const parsedEventDate = getValidDate(eventDate);
-  if (!parsedEventDate) return false;
-  return Date.now() - parsedEventDate.getTime() >= AUTO_ARCHIVE_DAYS * DAY_IN_MS;
+const getTodayStart = () => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+};
+
+const shouldAutoArchiveEvent = (event) => {
+  const archivedBy = String(event?.archived_by || "").trim().toLowerCase();
+  if (archivedBy === MANUAL_UNARCHIVE_OVERRIDE) {
+    return false;
+  }
+
+  const parsedEndDate = getValidDate(event?.end_date || event?.event_date);
+  if (!parsedEndDate) return false;
+
+  parsedEndDate.setHours(0, 0, 0, 0);
+  return parsedEndDate.getTime() <= getTodayStart().getTime();
 };
 
 const asBoolean = (value) => {
@@ -134,7 +141,7 @@ const asBoolean = (value) => {
 
 const deriveArchiveState = (event) => {
   const manualArchived = asBoolean(event?.is_archived);
-  const autoArchived = isAutoArchivedByDate(event?.event_date);
+  const autoArchived = shouldAutoArchiveEvent(event);
 
   return {
     is_archived: manualArchived,
@@ -152,6 +159,83 @@ const isMissingArchiveColumnsError = (error) => {
     (message.includes("column") &&
       (message.includes("is_archived") || message.includes("archived_at") || message.includes("archived_by")))
   );
+};
+
+const persistAutoArchivedEvents = async (events) => {
+  const eventList = Array.isArray(events) ? events : [];
+  const nowIso = new Date().toISOString();
+
+  const candidates = eventList.filter((event) => {
+    if (asBoolean(event?.is_archived)) return false;
+    return shouldAutoArchiveEvent(event);
+  });
+
+  if (candidates.length === 0) {
+    return eventList;
+  }
+
+  const archivedEventIds = new Set();
+
+  for (const event of candidates) {
+    const eventId = event?.event_id;
+    if (!eventId) continue;
+
+    try {
+      await update(
+        "events",
+        {
+          is_archived: true,
+          archived_at: nowIso,
+          archived_by: event?.archived_by || "system:auto_end_date",
+          updated_at: nowIso,
+        },
+        { event_id: eventId }
+      );
+      archivedEventIds.add(eventId);
+      continue;
+    } catch (error) {
+      const code = String(error?.code || "");
+      const message = String(error?.message || "").toLowerCase();
+      const missingArchivedByColumn = code === "42703" && message.includes("archived_by");
+
+      if (!missingArchivedByColumn) {
+        console.warn(`[AutoArchive] Failed to auto-archive ${eventId}:`, error?.message || error);
+        continue;
+      }
+    }
+
+    try {
+      await update(
+        "events",
+        {
+          is_archived: true,
+          archived_at: nowIso,
+          updated_at: nowIso,
+        },
+        { event_id: eventId }
+      );
+      archivedEventIds.add(eventId);
+    } catch (fallbackError) {
+      console.warn(`[AutoArchive] Fallback auto-archive failed for ${eventId}:`, fallbackError?.message || fallbackError);
+    }
+  }
+
+  if (archivedEventIds.size === 0) {
+    return eventList;
+  }
+
+  return eventList.map((event) => {
+    if (!archivedEventIds.has(event?.event_id)) {
+      return event;
+    }
+
+    return {
+      ...event,
+      is_archived: true,
+      archived_at: event?.archived_at || nowIso,
+      archived_by: event?.archived_by || "system:auto_end_date",
+    };
+  });
 };
 
 
@@ -173,6 +257,7 @@ router.get("/", async (req, res) => {
     }
 
     const events = await queryAll("events", queryOptions);
+    const eventsWithAutoArchive = await persistAutoArchivedEvents(events);
 
     // Build registration counts once so both sorting and UI display use the same value.
     const registrations = await queryAll("registrations", { select: "event_id" });
@@ -184,7 +269,7 @@ router.get("/", async (req, res) => {
     });
 
     // Parse JSON fields for each event
-    let processedEvents = events.map((event) => {
+    let processedEvents = eventsWithAutoArchive.map((event) => {
       const archiveState = deriveArchiveState(event);
       return {
         ...event,
@@ -644,17 +729,34 @@ router.patch(
 
       const archiveValue = shouldArchive;
       const nowIso = new Date().toISOString();
-      const updatedRows = await update(
-        "events",
-        {
-          is_archived: archiveValue,
-          archived_at: archiveValue ? nowIso : null,
-          archived_by: archiveValue ? req.userInfo?.email || req.userId || null : null,
-          updated_at: nowIso,
-          updated_by: req.userInfo?.email || null,
-        },
-        { event_id: eventId }
-      );
+      const buildArchivePayload = (includeArchivedBy = true) => ({
+        is_archived: archiveValue,
+        archived_at: archiveValue ? nowIso : null,
+        ...(includeArchivedBy
+          ? {
+              archived_by: archiveValue
+                ? req.userInfo?.email || req.userId || null
+                : MANUAL_UNARCHIVE_OVERRIDE,
+            }
+          : {}),
+        updated_at: nowIso,
+      });
+
+      let updatedRows;
+      try {
+        updatedRows = await update("events", buildArchivePayload(true), { event_id: eventId });
+      } catch (error) {
+        const code = String(error?.code || "");
+        const message = String(error?.message || "").toLowerCase();
+        const missingArchivedByColumn = code === "42703" && message.includes("archived_by");
+
+        if (!missingArchivedByColumn) {
+          throw error;
+        }
+
+        console.warn("[Archive] 'archived_by' column missing; retrying archive update without it.");
+        updatedRows = await update("events", buildArchivePayload(false), { event_id: eventId });
+      }
 
       if (!updatedRows || updatedRows.length === 0) {
         return res.status(404).json({ error: "Event not found." });
@@ -794,6 +896,19 @@ router.put(
         max_participants
       } = req.body;
 
+      // ─── AUTO-UNARCHIVE LOGIC ───────────────────────────────────────────
+      // If an event was auto-archived (date passed) but then the date is changed
+      // to a future date, automatically unarchive it
+      const newEventDate = getValidDate(event_date || req.body.end_date);
+      const isDateChangedToFuture = newEventDate && newEventDate > getTodayStart();
+      const wasAutoArchivedBySystem = asBoolean(event?.is_archived) && 
+        (event?.archived_by?.includes("system:auto_end_date") || !event?.archived_by);
+      const shouldAutoUnarchive = isDateChangedToFuture && wasAutoArchivedBySystem && asBoolean(event?.is_archived);
+      
+      if (shouldAutoUnarchive) {
+        console.log(`[AutoUnarchive] Event ${eventId} date changed to future (${event_date}). Auto-unarchiving.`);
+      }
+
       if (!title || typeof title !== "string" || title.trim() === "") {
         return res.status(400).json({ error: "Title is required and must be a non-empty string." });
       }
@@ -871,7 +986,9 @@ router.put(
         allowed_campuses: Array.isArray(req.body.allowed_campuses)
           ? req.body.allowed_campuses
           : parseJsonField(req.body.allowed_campuses, []),
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        // Auto-unarchive if date changed to future
+        ...(shouldAutoUnarchive ? { is_archived: false, archived_at: null, archived_by: null } : {})
       };
 
       console.log("🔄 UPDATE DATA - File URLs being saved to database:");

@@ -71,12 +71,12 @@ export async function middleware(req: NextRequest) {
     return redirect("/auth");
   }
 
-  if (
-    user &&
-    (pathname.startsWith("/manage") ||
-      pathname.startsWith("/create") ||
-      pathname.startsWith("/edit"))
-  ) {
+  const isManagementRoute =
+    pathname.startsWith("/manage") ||
+    pathname.startsWith("/create") ||
+    pathname.startsWith("/edit");
+
+  if (user && isManagementRoute) {
     if (!user.email) {
       return redirect("/error");
     }
@@ -89,7 +89,7 @@ export async function middleware(req: NextRequest) {
 
     const canManage = Boolean(userData?.is_organiser) || Boolean(userData?.is_masteradmin);
 
-    if (error || !userData || !canManage) {
+    if (isManagementRoute && (error || !userData || !canManage)) {
       return redirect("/error");
     }
   }

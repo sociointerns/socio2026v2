@@ -7,7 +7,8 @@ import {
   getUserInfo,
   checkRoleExpiration,
   requireOrganiser,
-  requireOwnership
+  requireOwnership,
+  optionalAuth
 } from "../middleware/authMiddleware.js";
 import { sendBroadcastNotification } from "./notificationRoutes.js";
 import { pushFestToGated, isGatedEnabled } from "../utils/gatedSync.js";
@@ -78,6 +79,143 @@ const parseComparableDate = (value) => {
 };
 
 const isMissingColumnError = (error) => String(error?.code || "") === "42703";
+const isMissingRelationError = (error) => {
+  const code = String(error?.code || "").toUpperCase();
+  const message = String(error?.message || "").toLowerCase();
+  return (
+    code === "42P01" ||
+    code === "PGRST205" ||
+    (message.includes("relation") && message.includes("does not exist")) ||
+    (message.includes("could not find") && message.includes("schema cache"))
+  );
+};
+const FEST_TABLE_CANDIDATES = ["fests", "fest"];
+const resolveFestTableCandidates = (primaryTable) =>
+  Array.from(new Set([primaryTable, ...FEST_TABLE_CANDIDATES].filter(Boolean)));
+const normalizeFestKey = (value) => String(value || "").trim().toLowerCase();
+
+const getMergedFestsFromCandidates = async (queryOptions, primaryTable) => {
+  const tables = resolveFestTableCandidates(primaryTable);
+  const festById = new Map();
+
+  for (const tableName of tables) {
+    try {
+      const rows = await queryAll(tableName, queryOptions);
+      for (const fest of rows || []) {
+        const key = String(fest?.fest_id || "").trim();
+        if (!key) continue;
+        if (!festById.has(key)) {
+          festById.set(key, fest);
+        }
+      }
+    } catch (error) {
+      if (isMissingRelationError(error)) {
+        continue;
+      }
+
+      // Legacy table variants may not support newer filter/order columns.
+      if (isMissingColumnError(error)) {
+        try {
+          const fallbackRows = await queryAll(tableName, { select: "*" });
+          for (const fest of fallbackRows || []) {
+            const key = String(fest?.fest_id || "").trim();
+            if (!key) continue;
+            if (!festById.has(key)) {
+              festById.set(key, fest);
+            }
+          }
+          continue;
+        } catch (fallbackError) {
+          if (isMissingRelationError(fallbackError) || isMissingColumnError(fallbackError)) {
+            continue;
+          }
+          throw fallbackError;
+        }
+      }
+
+      throw error;
+    }
+  }
+
+  return Array.from(festById.values());
+};
+
+const getFestByIdFromCandidates = async (festId, primaryTable) => {
+  const tables = resolveFestTableCandidates(primaryTable);
+
+  for (const tableName of tables) {
+    try {
+      const fest = await queryOne(tableName, { where: { fest_id: festId } });
+      if (fest) {
+        return fest;
+      }
+    } catch (error) {
+      if (isMissingRelationError(error)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  return null;
+};
+
+const deriveFestsFromEvents = (events, festRegistrationCounts = {}) => {
+  const derivedFestMap = new Map();
+  const asBoolean = (value) => value === true || value === 1 || value === "1" || value === "true";
+
+  for (const event of events || []) {
+    const festKey = String(event?.fest_id || event?.fest || "").trim();
+    if (!festKey) continue;
+
+    if (!derivedFestMap.has(festKey)) {
+      derivedFestMap.set(festKey, {
+        fest_id: festKey,
+        fest_title: festKey,
+        organizing_dept: event?.organizing_dept || null,
+        opening_date: event?.event_date || null,
+        closing_date: event?.event_date || null,
+        created_at: event?.created_at || null,
+        registration_count: festRegistrationCounts[festKey] || 0,
+        _eventCount: 0,
+        _activeEventCount: 0,
+      });
+    }
+
+    const entry = derivedFestMap.get(festKey);
+    entry._eventCount += 1;
+    if (!asBoolean(event?.is_archived)) {
+      entry._activeEventCount += 1;
+    }
+
+    if (!entry.organizing_dept && event?.organizing_dept) {
+      entry.organizing_dept = event.organizing_dept;
+    }
+
+    if (!entry.opening_date && event?.event_date) {
+      entry.opening_date = event.event_date;
+    }
+
+    if (!entry.closing_date && event?.event_date) {
+      entry.closing_date = event.event_date;
+    }
+
+    if (!entry.created_at && event?.created_at) {
+      entry.created_at = event.created_at;
+    }
+  }
+
+  return Array.from(derivedFestMap.values()).map((fest) => ({
+    fest_id: fest.fest_id,
+    fest_title: fest.fest_title,
+    organizing_dept: fest.organizing_dept,
+    opening_date: fest.opening_date,
+    closing_date: fest.closing_date,
+    created_at: fest.created_at,
+    registration_count: fest.registration_count,
+    is_archived: fest._eventCount > 0 && fest._activeEventCount === 0,
+  }));
+};
 
 const mapFestResponse = (fest) => {
   if (!fest) return fest;
@@ -98,10 +236,9 @@ const mapFestResponse = (fest) => {
 };
 
 // GET all fests
-router.get("/", async (req, res) => {
+router.get("/", optionalAuth, checkRoleExpiration, async (req, res) => {
   try {
-    const { page, pageSize, search, status, sortBy, sortOrder } = req.query;
-    const festTable = await getFestTableForDatabase(queryAll);
+    const { page, pageSize, search, status, archive, sortBy, sortOrder } = req.query;
     const today = new Date().toISOString().split('T')[0];
 
     let queryOptions = {
@@ -120,10 +257,53 @@ router.get("/", async (req, res) => {
     }
 
     console.log(`Fetching fests with status: ${status || 'all'}...`);
-    const fests = await queryAll(festTable, queryOptions);
+    let fests = [];
+    try {
+      const festTable = await getFestTableForDatabase(queryAll);
+      fests = await getMergedFestsFromCandidates(queryOptions, festTable);
+    } catch (error) {
+      if (!isMissingRelationError(error)) {
+        throw error;
+      }
+      console.warn("[Fests] Fest tables not available; falling back to event-derived fests.");
+      fests = [];
+    }
 
-    const events = await queryAll("events", { select: "event_id, fest" });
-    const registrations = await queryAll("registrations", { select: "event_id" });
+    let events = [];
+    try {
+      events = await queryAll("events", {
+        select: "event_id, fest, fest_id, organizing_dept, event_date, created_at, is_archived",
+      });
+    } catch (error) {
+      if (isMissingRelationError(error)) {
+        events = [];
+      } else if (isMissingColumnError(error)) {
+        try {
+          events = await queryAll("events", {
+            select: "event_id, fest_id, organizing_dept, event_date, created_at, is_archived",
+          });
+        } catch (fallbackError) {
+          if (isMissingRelationError(fallbackError) || isMissingColumnError(fallbackError)) {
+            events = [];
+          } else {
+            throw fallbackError;
+          }
+        }
+      } else {
+        throw error;
+      }
+    }
+
+    let registrations = [];
+    try {
+      registrations = await queryAll("registrations", { select: "event_id" });
+    } catch (error) {
+      if (isMissingRelationError(error) || isMissingColumnError(error)) {
+        registrations = [];
+      } else {
+        throw error;
+      }
+    }
 
     const eventRegistrationCounts = {};
     (registrations || []).forEach((reg) => {
@@ -137,8 +317,9 @@ router.get("/", async (req, res) => {
     const festTitleToId = new Map((fests || []).map((fest) => [fest.fest_title, fest.fest_id]));
     const festRegistrationCounts = {};
     (events || []).forEach((event) => {
-      if (!event.fest) return;
-      const matchedFestId = festTitleToId.get(event.fest) || event.fest;
+      const linkedFestKey = event.fest || event.fest_id;
+      if (!linkedFestKey) return;
+      const matchedFestId = festTitleToId.get(linkedFestKey) || linkedFestKey;
       const eventCount = eventRegistrationCounts[event.event_id] || 0;
       festRegistrationCounts[matchedFestId] = (festRegistrationCounts[matchedFestId] || 0) + eventCount;
     });
@@ -147,6 +328,11 @@ router.get("/", async (req, res) => {
       ...mapFestResponse(fest),
       registration_count: festRegistrationCounts[fest.fest_id] || 0
     }));
+
+    const hasCanonicalFestRows = processedFests.length > 0;
+    if (!hasCanonicalFestRows && (events || []).length > 0) {
+      processedFests = deriveFestsFromEvents(events, festRegistrationCounts);
+    }
 
     const normalizedSearch = typeof search === "string" ? search.trim().toLowerCase() : "";
     if (normalizedSearch) {
@@ -189,6 +375,26 @@ router.get("/", async (req, res) => {
 
         return true;
       });
+    }
+
+    const normalizedArchive = typeof archive === "string" ? archive.toLowerCase() : "all";
+
+    // Filter out archived fests for non-organizers/admins
+    const userInfo = req.userInfo;
+    const isAdminOrOrganizer = userInfo && (userInfo.is_masteradmin || userInfo.is_organiser);
+    
+    if (!isAdminOrOrganizer) {
+      processedFests = processedFests.filter((fest) => !fest.is_archived);
+
+      console.log(`[Archive Filter] Non-organizer viewing ${processedFests.length} non-archived fests`);
+    } else {
+      console.log(`[Archive Filter] Organizer/Admin viewing all ${processedFests.length} fests (incl. archived)`);
+    }
+
+    if (normalizedArchive === "archived") {
+      processedFests = processedFests.filter((fest) => Boolean(fest.is_archived));
+    } else if (normalizedArchive === "active") {
+      processedFests = processedFests.filter((fest) => !fest.is_archived);
     }
 
     const hasExplicitSortBy = typeof sortBy === "string" && sortBy.trim() !== "";
@@ -265,6 +471,7 @@ router.get("/", async (req, res) => {
       filters: {
         search: normalizedSearch,
         status: normalizedStatus,
+        archive: normalizedArchive,
       },
       sort: {
         by: normalizedSortBy,
@@ -282,7 +489,7 @@ router.get("/", async (req, res) => {
 });
 
 // GET specific fest by ID
-router.get("/:festId", async (req, res) => {
+router.get("/:festId", optionalAuth, checkRoleExpiration, async (req, res) => {
   try {
     const { festId: festSlug } = req.params;
     console.log(`[Fest GET] Fetching fest: ${festSlug}`);
@@ -294,14 +501,33 @@ router.get("/:festId", async (req, res) => {
     }
 
     console.log(`[Fest GET] Getting fest table...`);
-    const festTable = await getFestTableForDatabase(queryAll);
-    
-    console.log(`[Fest GET] Querying ${festTable} table for fest_id: ${festSlug}`);
-    const fest = await queryOne(festTable, { where: { fest_id: festSlug } });
+    let fest = null;
+    try {
+      const festTable = await getFestTableForDatabase(queryAll);
+      console.log(`[Fest GET] Querying ${festTable} table for fest_id: ${festSlug}`);
+      fest = await getFestByIdFromCandidates(festSlug, festTable);
+    } catch (error) {
+      if (!isMissingRelationError(error)) {
+        throw error;
+      }
+      console.warn(`[Fest GET] Fest tables unavailable while querying ${festSlug}; returning not found.`);
+      fest = null;
+    }
 
     if (!fest) {
       console.warn(`[Fest GET] Fest not found: ${festSlug}`);
       return res.status(404).json({ error: `Fest with ID (slug) '${festSlug}' not found.` });
+    }
+
+    // Check if fest is archived
+    if (fest.is_archived) {
+      const userInfo = req.userInfo;
+      const isAdminOrOrganizer = userInfo && (userInfo.is_masteradmin || userInfo.is_organiser);
+      
+      if (!isAdminOrOrganizer) {
+        console.warn(`[Fest GET] Archived fest access denied: ${festSlug}`);
+        return res.status(403).json({ error: "This fest is archived and not available" });
+      }
     }
 
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -718,31 +944,88 @@ router.patch(
 
       const updatedFest = updatedFests[0];
 
-      // Also archive/unarchive all events under this fest
-      const eventsToUpdate = await queryAll("events", {
-        where: { fest_id: festId }
+      // Also archive/unarchive all events linked to this fest.
+      // We support both canonical fest_id links and legacy fest-title links.
+      let allEvents = [];
+      try {
+        allEvents = await queryAll("events", { select: "event_id, fest_id, fest" });
+      } catch (error) {
+        if (isMissingRelationError(error)) {
+          allEvents = [];
+        } else if (isMissingColumnError(error)) {
+          try {
+            allEvents = await queryAll("events", { select: "event_id, fest_id" });
+          } catch (fallbackError) {
+            if (isMissingRelationError(fallbackError) || isMissingColumnError(fallbackError)) {
+              allEvents = [];
+            } else {
+              throw fallbackError;
+            }
+          }
+        } else {
+          throw error;
+        }
+      }
+
+      const matchKeys = new Set(
+        [normalizeFestKey(festId), normalizeFestKey(updatedFest?.fest_title)].filter(Boolean)
+      );
+
+      const eventsToUpdate = (allEvents || []).filter((event) => {
+        const matchesByFestId = matchKeys.has(normalizeFestKey(event?.fest_id));
+        const matchesByLegacyFest = Object.prototype.hasOwnProperty.call(event || {}, "fest")
+          ? matchKeys.has(normalizeFestKey(event?.fest))
+          : false;
+
+        return matchesByFestId || matchesByLegacyFest;
       });
 
-      if (eventsToUpdate && eventsToUpdate.length > 0) {
-        await update(
-          "events",
-          {
-            is_archived: archiveValue,
-            archived_at: archiveValue ? nowIso : null,
-            archived_by: archiveValue ? req.userInfo?.email || req.userId || null : null,
-            updated_at: nowIso,
-          },
-          { fest_id: festId }
-        );
-        console.log(`✅ ${archiveValue ? "Archived" : "Unarchived"} ${eventsToUpdate.length} events for fest ${festId}`);
+      let eventsAffected = 0;
+      if (eventsToUpdate.length > 0) {
+        const buildEventArchivePayload = (includeArchivedBy = true) => ({
+          is_archived: archiveValue,
+          archived_at: archiveValue ? nowIso : null,
+          ...(includeArchivedBy
+            ? { archived_by: archiveValue ? req.userInfo?.email || req.userId || null : null }
+            : {}),
+          updated_at: nowIso,
+        });
+
+        for (const event of eventsToUpdate) {
+          const eventId = String(event?.event_id || "").trim();
+          if (!eventId) continue;
+
+          try {
+            const updatedRows = await update("events", buildEventArchivePayload(true), { event_id: eventId });
+            if (Array.isArray(updatedRows) && updatedRows.length > 0) {
+              eventsAffected += 1;
+            }
+            continue;
+          } catch (error) {
+            const code = String(error?.code || "");
+            const message = String(error?.message || "").toLowerCase();
+            const missingArchivedByColumn = code === "42703" && message.includes("archived_by");
+
+            if (!missingArchivedByColumn) {
+              throw error;
+            }
+          }
+
+          const fallbackRows = await update("events", buildEventArchivePayload(false), { event_id: eventId });
+          if (Array.isArray(fallbackRows) && fallbackRows.length > 0) {
+            eventsAffected += 1;
+          }
+        }
+
+        console.log(`✅ ${archiveValue ? "Archived" : "Unarchived"} ${eventsAffected} events for fest ${festId}`);
       }
 
       return res.status(200).json({
         message: archiveValue 
-          ? `Fest and ${eventsToUpdate?.length || 0} associated events archived successfully.` 
+          ? `Fest and ${eventsAffected} associated events archived successfully.` 
           : "Fest and associated events moved back to active list.",
         fest: mapFestResponse(updatedFest),
-        events_affected: eventsToUpdate?.length || 0,
+        events_affected: eventsAffected,
       });
     } catch (error) {
       console.error("Server error PATCH /api/fests/:festId/archive:", error);

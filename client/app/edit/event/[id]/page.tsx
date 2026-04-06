@@ -44,7 +44,7 @@ export default function EditEventPage() {
       return;
     }
 
-    if (!userData || !(userData.is_organiser || (userData as any).is_admin)) {
+    if (!userData || !(userData.is_organiser || (userData as any).is_masteradmin)) {
       setIsLoading(false);
       setErrorMessage("You are not authorized to edit this event.");
       return;
@@ -325,7 +325,7 @@ export default function EditEventPage() {
       setIsSubmitting(false);
       throw new Error("Authentication session expired or not found."); // Ensure EventForm knows
     }
-    if (!userData || !(userData.is_organiser || (userData as any).is_admin)) {
+    if (!userData || !(userData.is_organiser || (userData as any).is_masteradmin)) {
       setErrorMessage("You are not authorized to perform this action.");
       setIsSubmitting(false);
       throw new Error("Not authorized."); // Ensure EventForm knows
@@ -580,30 +580,8 @@ export default function EditEventPage() {
   return initialData &&
     session &&
     userData &&
-    (userData.is_organiser || (userData as any).is_admin) ? (
+    (userData.is_organiser || (userData as any).is_masteradmin) ? (
     <>
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 md:px-12 pt-4">
-        <div className="mb-3 p-3 border border-slate-200 rounded-lg bg-white flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-          <p className="text-sm font-semibold text-slate-700">
-            Event Editor
-          </p>
-          <button
-            type="button"
-            onClick={handleToggleArchive}
-            disabled={isArchiveUpdating || isSubmitting}
-            className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${
-              isArchiveUpdating || isSubmitting
-                ? "bg-slate-200 text-slate-500 cursor-not-allowed"
-                : isArchived
-                  ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
-                  : "bg-amber-100 text-amber-800 hover:bg-amber-200"
-            }`}
-          >
-            {isArchiveUpdating ? "Saving..." : isArchived ? "Unarchive Event" : "Archive Event"}
-          </button>
-        </div>
-      </div>
-
       {errorMessage && !isSubmitting && (
         <div className="max-w-4xl mx-auto px-4 sm:px-6 md:px-12 pt-4">
           <div className="p-4 my-2 text-sm text-red-700 bg-red-100 border border-red-400 rounded text-center">
@@ -619,6 +597,9 @@ export default function EditEventPage() {
         existingImageFileUrl={existingImageFileUrl}
         existingBannerFileUrl={existingBannerFileUrl}
         existingPdfFileUrl={existingPdfFileUrl}
+        isArchived={isArchived}
+        isArchiveUpdating={isArchiveUpdating}
+        onToggleArchive={handleToggleArchive}
       />
     </>
   ) : (
