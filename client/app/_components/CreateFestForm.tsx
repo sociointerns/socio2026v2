@@ -1016,16 +1016,6 @@ function CreateFestForm(props?: CreateFestProps) {
               newErrors.allowedCampuses = "Select at least one campus";
             else delete newErrors.allowedCampuses;
             break;
-          case "departmentHostedAt":
-            if (!(value as string).trim())
-              newErrors.departmentHostedAt = "Hosted department is required";
-            else delete newErrors.departmentHostedAt;
-            break;
-          case "allowedDepartments":
-            if (!Array.isArray(value) || value.length === 0)
-              newErrors.allowedDepartments = "Select at least one department";
-            else delete newErrors.allowedDepartments;
-            break;
         }
       }
       setErrors(newErrors);
@@ -1050,8 +1040,6 @@ function CreateFestForm(props?: CreateFestProps) {
       "organizingDept",
       "campusHostedAt",
       "allowedCampuses",
-      "departmentHostedAt",
-      "allowedDepartments",
     ];
 
     const validateSync = (name: string, value: any) => {
@@ -1133,13 +1121,6 @@ function CreateFestForm(props?: CreateFestProps) {
         case "allowedCampuses":
           if (!Array.isArray(value) || value.length === 0)
             errorMsg = "Select at least one campus";
-          break;
-        case "departmentHostedAt":
-          if (!String(value).trim()) errorMsg = "Hosted department is required";
-          break;
-        case "allowedDepartments":
-          if (!Array.isArray(value) || value.length === 0)
-            errorMsg = "Select at least one department";
           break;
       }
       if (errorMsg) currentValidationErrors[name] = errorMsg;
@@ -1817,96 +1798,6 @@ function CreateFestForm(props?: CreateFestProps) {
                       </div>
                     </div>
 
-                    {/* Department Restrictions - Always Visible */}
-                    <div className="bg-white border border-gray-200 rounded-xl p-4">
-                      <div className="flex items-start justify-between mb-4">
-                        <div>
-                          <label className="text-sm font-semibold text-gray-900 block">
-                            Department Availability
-                          </label>
-                          <p className="text-xs text-gray-500 mt-1">
-                            Specify which department hosts the fest and which departments can participate
-                          </p>
-                        </div>
-                        <span className="text-xs bg-red-100 text-red-800 px-2.5 py-1 rounded-lg font-medium whitespace-nowrap">
-                          Required
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {/* Department Hosted At */}
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-700 mb-2">
-                            Which department is hosting this fest? <span className="text-red-500">*</span>
-                          </label>
-                          <select
-                            id="departmentHostedAt"
-                            value={formData.departmentHostedAt}
-                            onChange={(e) => {
-                              const selectedDepartment = e.target.value;
-                              setFormData(prev => ({ ...prev, departmentHostedAt: selectedDepartment }));
-                              validateField("departmentHostedAt", selectedDepartment);
-                            }}
-                            onBlur={(e) => validateField("departmentHostedAt", e.target.value)}
-                            aria-label="Fest hosted department"
-                            className={`w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#154CB3] focus:ring-offset-0 focus:border-transparent bg-white transition-all ${
-                              errors.departmentHostedAt ? "border-red-500" : "border-gray-300"
-                            }`}
-                          >
-                            <option value="">Select department</option>
-                            {baseDepartments.map((dept) => (
-                              <option key={dept.value} value={dept.value}>{dept.label}</option>
-                            ))}
-                          </select>
-                          {errors.departmentHostedAt && (
-                            <p className="text-red-500 text-xs mt-2">{errors.departmentHostedAt}</p>
-                          )}
-                        </div>
-
-                        {/* Which Departments Can Register */}
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-700 mb-2">
-                            Which departments can register? <span className="text-red-500">*</span>
-                          </label>
-                          <div
-                            className={`space-y-1.5 h-[102px] overflow-y-auto pr-2 rounded-md ${
-                              errors.allowedDepartments ? "border border-red-500 p-2" : ""
-                            }`}
-                          >
-                            {baseDepartments.map((dept) => (
-                              <label
-                                key={dept.value}
-                                className="flex items-center gap-2.5 cursor-pointer text-sm text-gray-700 hover:text-gray-900 py-0.5 transition-colors"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={formData.allowedDepartments.includes(dept.value)}
-                                  onChange={(e) => {
-                                    const current = formData.allowedDepartments;
-                                    let updatedDepartments: string[];
-                                    if (e.target.checked) {
-                                      updatedDepartments = [...current, dept.value];
-                                    } else {
-                                      updatedDepartments = current.filter(d => d !== dept.value);
-                                    }
-                                    setFormData(prev => ({ ...prev, allowedDepartments: updatedDepartments }));
-                                    validateField("allowedDepartments", updatedDepartments);
-                                  }}
-                                  className="h-4 w-4 rounded border-gray-300 text-[#154CB3] focus:ring-[#154CB3] cursor-pointer"
-                                />
-                                <span>{dept.label}</span>
-                              </label>
-                            ))}
-                          </div>
-                          <p className="text-xs text-gray-500 mt-2">
-                            Select at least one department that can register for this fest.
-                          </p>
-                          {errors.allowedDepartments && (
-                            <p className="text-red-500 text-xs mt-2">{errors.allowedDepartments}</p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
                   </div>
                 </div>
 
