@@ -615,6 +615,7 @@ router.post(
         faqs: festData.faqs || [],
         campus_hosted_at: festData.campus_hosted_at || festData.campusHostedAt || null,
         allowed_campuses: festData.allowed_campuses || festData.allowedCampuses || [],
+        department_hosted_at: festData.department_hosted_at || festData.departmentHostedAt || null,
         allow_outsiders: festData.allow_outsiders === true || festData.allow_outsiders === 'true' || festData.allowOutsiders === true || festData.allowOutsiders === 'true' ? true : false,
       };
 
@@ -705,6 +706,7 @@ router.put(
       const eventHeadsInput = pickDefined(updateData.event_heads, updateData.eventHeads);
       const campusHostedAtInput = pickDefined(updateData.campus_hosted_at, updateData.campusHostedAt);
       const allowedCampusesInput = pickDefined(updateData.allowed_campuses, updateData.allowedCampuses);
+      const departmentHostedAtInput = pickDefined(updateData.department_hosted_at, updateData.departmentHostedAt);
       const allowOutsidersInput = pickDefined(updateData.allow_outsiders, updateData.allowOutsiders);
 
       const updatePayload = {};
@@ -741,6 +743,7 @@ router.put(
         ["faqs", parseJsonLikeField(updateData.faqs, [])],
         ["campus_hosted_at", campusHostedAtInput],
         ["allowed_campuses", parseJsonLikeField(allowedCampusesInput, [])],
+        ["department_hosted_at", departmentHostedAtInput],
         ["allow_outsiders", allowOutsidersInput !== undefined ? (allowOutsidersInput === true || allowOutsidersInput === 'true') : undefined],
       ];
 

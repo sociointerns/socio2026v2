@@ -322,6 +322,8 @@ interface CreateFestState {
   faqs: { question: string; answer: string }[];
   campusHostedAt: string;
   allowedCampuses: string[];
+  departmentHostedAt: string;
+  allowedDepartments: string[];
   allowOutsiders: boolean;
 }
 
@@ -672,6 +674,8 @@ function CreateFestForm(props?: CreateFestProps) {
     faqs,
     campusHostedAt: "",
     allowedCampuses: [],
+    departmentHostedAt: "",
+    allowedDepartments: [],
     allowOutsiders: false,
   });
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -753,6 +757,8 @@ function CreateFestForm(props?: CreateFestProps) {
               faqs: data.fest.faqs || [],
               campusHostedAt: data.fest.campus_hosted_at || "",
               allowedCampuses: data.fest.allowed_campuses || [],
+              departmentHostedAt: data.fest.department_hosted_at || "",
+              allowedDepartments: data.fest.department_access || [],
               allowOutsiders: data.fest.allow_outsiders === true || data.fest.allow_outsiders === 'true' || false,
             });
           } else {
@@ -1145,6 +1151,8 @@ function CreateFestForm(props?: CreateFestProps) {
         faqs: formData.faqs,
         campus_hosted_at: formData.campusHostedAt || null,
         allowed_campuses: formData.allowedCampuses || [],
+        department_hosted_at: formData.departmentHostedAt || null,
+        departmentAccess: formData.allowedDepartments || [],
         allow_outsiders: formData.allowOutsiders,
         // Always include festImageUrl so backend always updates the DB column
         festImageUrl: finalImageUrl,
@@ -1674,6 +1682,77 @@ function CreateFestForm(props?: CreateFestProps) {
                             {!formData.allowOutsiders 
                               ? "All campuses or select specific campuses where this fest will be held (Mandatory)"
                               : "Leave all unchecked to allow all campuses"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Department Restrictions - Always Visible */}
+                    <div className="bg-white border border-gray-200 rounded-xl p-4">
+                      <div className="flex items-start justify-between mb-4">
+                        <div>
+                          <label className="text-sm font-semibold text-gray-900 block">
+                            Department Availability
+                          </label>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Specify which department hosts the fest and which departments can participate
+                          </p>
+                        </div>
+                        <span className="text-xs bg-amber-100 text-amber-800 px-2.5 py-1 rounded-lg font-medium whitespace-nowrap">
+                          Optional
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {/* Department Hosted At */}
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-2">
+                            Which department is hosting this fest?
+                          </label>
+                          <select
+                            id="departmentHostedAt"
+                            value={formData.departmentHostedAt}
+                            onChange={(e) => setFormData(prev => ({ ...prev, departmentHostedAt: e.target.value }))}
+                            aria-label="Fest hosted department"
+                            className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#154CB3] focus:ring-offset-0 focus:border-transparent bg-white transition-all"
+                          >
+                            <option value="">Select department</option>
+                            {baseDepartments.map((dept) => (
+                              <option key={dept.value} value={dept.value}>{dept.label}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Which Departments Can Register */}
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-2">
+                            Which departments can register?
+                          </label>
+                          <div className="space-y-1.5 h-[102px] overflow-y-auto pr-2">
+                            {baseDepartments.map((dept) => (
+                              <label
+                                key={dept.value}
+                                className="flex items-center gap-2.5 cursor-pointer text-sm text-gray-700 hover:text-gray-900 py-0.5 transition-colors"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={formData.allowedDepartments.includes(dept.value)}
+                                  onChange={(e) => {
+                                    const current = formData.allowedDepartments;
+                                    if (e.target.checked) {
+                                      setFormData(prev => ({ ...prev, allowedDepartments: [...current, dept.value] }));
+                                    } else {
+                                      setFormData(prev => ({ ...prev, allowedDepartments: current.filter(d => d !== dept.value) }));
+                                    }
+                                  }}
+                                  className="h-4 w-4 rounded border-gray-300 text-[#154CB3] focus:ring-[#154CB3] cursor-pointer"
+                                />
+                                <span>{dept.label}</span>
+                              </label>
+                            ))}
+                          </div>
+                          <p className="text-xs text-gray-500 mt-2">
+                            Leave all unchecked to allow all departments, or select specific departments
                           </p>
                         </div>
                       </div>
