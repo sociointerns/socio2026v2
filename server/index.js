@@ -41,7 +41,10 @@ app.use('/api', (req, res, next) => {
 
 const DEFAULT_ALLOWED_ORIGINS = [
   'https://socio.christuniversity.in',
+  'https://sociov2.vercel.app',
   'https://sociodev.vercel.app',
+  'https://live.withsocio.com',
+  'https://gated.withsocio.com',
   'http://localhost:3000',
   'http://127.0.0.1:3000'
 ];

@@ -8,8 +8,19 @@ import { getFestTableForSupabase } from "../utils/festTableResolver.js";
 const router = express.Router();
 const isProduction = process.env.NODE_ENV === "production";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-flash-lite-latest";
+const GEMINI_FALLBACK_MODELS = Array.from(new Set([
+  GEMINI_MODEL,
+  "gemini-flash-lite-latest",
+  "gemini-2.5-flash-lite",
+  "gemini-flash-latest",
+]));
 const MAX_HISTORY_MESSAGES = 24;
+const DEFAULT_CHAT_DAILY_LIMIT = 5;
+const parsedDailyLimit = Number.parseInt(process.env.CHAT_DAILY_LIMIT || "", 10);
+const CHAT_DAILY_LIMIT = Number.isInteger(parsedDailyLimit) && parsedDailyLimit > 0
+  ? parsedDailyLimit
+  : DEFAULT_CHAT_DAILY_LIMIT;
 
 // Lazy-init OpenAI - do not crash startup if key is missing
 let openAI = null;
@@ -47,10 +58,12 @@ You help students with:
 
 Rules:
 - Be concise and friendly
+- Be natural and lively in tone while staying professional
 - If you don't know something specific, suggest checking the events page or contacting support
 - Never make up event details — only use data provided in context
 - Keep responses under 150 words
-- When user asks about "this event" or "this fest", refer to the current page context`;
+- When user asks about "this event" or "this fest", refer to the current page context
+- If a question is unclear, outside your scope, or you cannot confidently help, reply: "I can't assist you with that. Please rephrase your question or ask something else."`;
 
 // Per-user daily limit storage
 const dailyLimitMap = new Map();
@@ -67,6 +80,44 @@ const dailyLimitCleanupInterval = setInterval(() => {
 
 if (typeof dailyLimitCleanupInterval.unref === "function") {
   dailyLimitCleanupInterval.unref();
+}
+
+function getDailyUsageKey(userEmail) {
+  return `${userEmail}_${new Date().toDateString()}`;
+}
+
+function getDailyUsage(userEmail) {
+  const key = getDailyUsageKey(userEmail);
+  const used = dailyLimitMap.get(key) || 0;
+  const limit = CHAT_DAILY_LIMIT;
+
+  return {
+    key,
+    limit,
+    used,
+    remaining: Math.max(0, limit - used),
+  };
+}
+
+function getNextUsageSnapshot(currentUsage) {
+  const used = Math.min(currentUsage.limit, currentUsage.used + 1);
+  return {
+    ...currentUsage,
+    used,
+    remaining: Math.max(0, currentUsage.limit - used),
+  };
+}
+
+function commitDailyUsage(usage) {
+  dailyLimitMap.set(usage.key, usage.used);
+}
+
+function toUsageBody(usage) {
+  return {
+    limit: usage.limit,
+    used: usage.used,
+    remaining: usage.remaining,
+  };
 }
 
 function normalizeHistory(history) {
@@ -140,11 +191,46 @@ function getFriendlyError(error) {
   };
 }
 
+function isGeminiRetryableError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  const statusCode = typeof error?.status === "number" ? error.status : 0;
+
+  return (
+    statusCode === 429 ||
+    statusCode === 404 ||
+    message.includes("quota") ||
+    message.includes("rate limit") ||
+    message.includes("too many requests") ||
+    message.includes("resource_exhausted") ||
+    message.includes("not found")
+  );
+}
+
 function setStreamHeaders(res) {
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
+}
+
+function setUsageHeaders(res, usage) {
+  res.setHeader("X-AI-Limit", String(usage.limit));
+  res.setHeader("X-AI-Used", String(usage.used));
+  res.setHeader("X-AI-Remaining", String(usage.remaining));
+
+  const existingExpose = String(res.getHeader("Access-Control-Expose-Headers") || "");
+  const exposeHeaders = new Set(
+    existingExpose
+      .split(",")
+      .map((header) => header.trim())
+      .filter(Boolean)
+  );
+
+  exposeHeaders.add("X-AI-Limit");
+  exposeHeaders.add("X-AI-Used");
+  exposeHeaders.add("X-AI-Remaining");
+
+  res.setHeader("Access-Control-Expose-Headers", Array.from(exposeHeaders).join(", "));
 }
 
 async function buildFullSystemPrompt(currentPage, userId) {
@@ -320,23 +406,41 @@ async function getGeminiReply({ message, history, fullSystemPrompt }) {
     throw new Error("GEMINI_UNAVAILABLE");
   }
 
-  const model = ai.getGenerativeModel({
-    model: GEMINI_MODEL,
-    systemInstruction: fullSystemPrompt,
-  });
+  let lastError = null;
+  const chatHistory = buildGeminiHistory(history);
 
-  const chat = model.startChat({
-    history: buildGeminiHistory(history),
-  });
+  for (let idx = 0; idx < GEMINI_FALLBACK_MODELS.length; idx += 1) {
+    const modelName = GEMINI_FALLBACK_MODELS[idx];
+    try {
+      const model = ai.getGenerativeModel({
+        model: modelName,
+        systemInstruction: fullSystemPrompt,
+      });
 
-  const result = await chat.sendMessage(message);
-  const reply = result.response.text();
+      const chat = model.startChat({
+        history: chatHistory,
+      });
 
-  if (!reply || !String(reply).trim()) {
-    throw new Error("GEMINI_EMPTY_RESPONSE");
+      const result = await chat.sendMessage(message);
+      const reply = result.response.text();
+
+      if (!reply || !String(reply).trim()) {
+        throw new Error("GEMINI_EMPTY_RESPONSE");
+      }
+
+      return String(reply).trim();
+    } catch (error) {
+      lastError = error;
+      const hasNextModel = idx < GEMINI_FALLBACK_MODELS.length - 1;
+      if (hasNextModel && isGeminiRetryableError(error)) {
+        console.warn(`[ChatBot] Gemini model ${modelName} unavailable/quota-hit, trying fallback model.`);
+        continue;
+      }
+      throw error;
+    }
   }
 
-  return String(reply).trim();
+  throw lastError || new Error("GEMINI_UNAVAILABLE");
 }
 
 // Health check — no auth, no sensitive details.
@@ -350,6 +454,9 @@ router.get("/health", (req, res) => {
     status: "ok",
     services: {
       ai: hasOpenAIKey || hasGeminiKey ? "configured" : "missing",
+      limits: {
+        daily_messages: CHAT_DAILY_LIMIT,
+      },
       providers: {
         openai: hasOpenAIKey ? "configured" : "missing",
         gemini: hasGeminiKey ? "configured" : "missing",
@@ -360,21 +467,28 @@ router.get("/health", (req, res) => {
   });
 });
 
+router.get("/usage", authenticateUser, (req, res) => {
+  const userEmail = req.user?.email || "unknown";
+  const usage = getDailyUsage(userEmail);
+  setUsageHeaders(res, usage);
+  return res.json(toUsageBody(usage));
+});
+
 router.post("/", authenticateUser, async (req, res) => {
   const userEmail = req.user?.email || "unknown";
   console.log("[ChatBot] Request received from:", userEmail);
-  
-  const today = new Date().toDateString();
-  const key = `${userEmail}_${today}`;
 
-  // Check daily user limit (20 messages per day)
-  const count = dailyLimitMap.get(key) || 0;
-  if (count >= 20) {
+  const usage = getDailyUsage(userEmail);
+  if (usage.used >= usage.limit) {
     console.log("[ChatBot] Rate limit hit for:", userEmail);
+    setUsageHeaders(res, usage);
     return res.status(429).json({
-      error: "You've used all 20 daily questions. Please try again tomorrow.",
+      error: `You've used all ${usage.limit} daily questions. Please try again tomorrow.`,
+      usage: toUsageBody(usage),
     });
   }
+
+  const usageAfterSuccess = getNextUsageSnapshot(usage);
 
   try {
     const { message, history = [], context, stream = false } = req.body || {};
@@ -407,6 +521,7 @@ router.post("/", authenticateUser, async (req, res) => {
 
     try {
       if (stream) {
+        setUsageHeaders(res, usageAfterSuccess);
         setStreamHeaders(res);
 
         let reply = "";
@@ -450,6 +565,7 @@ router.post("/", authenticateUser, async (req, res) => {
           const friendly = getFriendlyError(finalError);
 
           if (!res.headersSent) {
+            setUsageHeaders(res, usage);
             const payload = { error: friendly.error };
             if (!isProduction) {
               payload.details = finalError.message;
@@ -465,7 +581,7 @@ router.post("/", authenticateUser, async (req, res) => {
         }
 
         console.log("[ChatBot] Stream completed via", providerUsed, "| length:", reply.length);
-        dailyLimitMap.set(key, count + 1);
+        commitDailyUsage(usageAfterSuccess);
         if (!res.writableEnded) {
           res.end();
         }
@@ -502,8 +618,9 @@ router.post("/", authenticateUser, async (req, res) => {
         throw geminiError || openAIError || new Error("AI_PROVIDER_UNAVAILABLE");
       }
 
-      dailyLimitMap.set(key, count + 1);
-      return res.json({ reply });
+      commitDailyUsage(usageAfterSuccess);
+      setUsageHeaders(res, usageAfterSuccess);
+      return res.json({ reply, usage: toUsageBody(usageAfterSuccess) });
     } finally {
       if (typeof req.off === "function") {
         req.off("close", onClientClose);
@@ -516,6 +633,9 @@ router.post("/", authenticateUser, async (req, res) => {
     console.error("[ChatBot] Stack:", error.stack);
 
     const friendly = getFriendlyError(error);
+    if (!res.headersSent) {
+      setUsageHeaders(res, usage);
+    }
     const payload = { error: friendly.error };
 
     if (!isProduction) {
