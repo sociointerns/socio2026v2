@@ -1005,7 +1005,7 @@ export default function ChatBot() {
                 <div className="flex items-center gap-2">
                   {dailyUsage && (
                     <span className={`rounded-full border px-2 py-0.5 ${dailyUsage.remaining <= 1 ? "border-amber-300/55 text-amber-100" : "border-emerald-300/45 text-emerald-100"}`}>
-                      AI left today: {dailyUsage.remaining}/{dailyUsage.limit}
+                      AI chat limit left today: {dailyUsage.remaining}/{dailyUsage.limit}
                     </span>
                   )}
                   <button type="button" onClick={resetChat} className="hover:text-white transition-colors underline underline-offset-2">
