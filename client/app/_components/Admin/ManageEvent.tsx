@@ -1130,10 +1130,14 @@ export default function EventForm({
       const previewDraftKey = saveEventPreviewDraft(previewData);
 
       const previewUrl = `/event/preview?draft=${encodeURIComponent(previewDraftKey)}`;
-      const previewTab = window.open(previewUrl, "_blank", "noopener,noreferrer");
+      const previewTab = window.open("", "_blank");
       if (!previewTab) {
-        router.push(previewUrl);
+        window.alert("Preview was blocked. Please allow pop-ups and try again.");
+        return;
       }
+
+      previewTab.opener = null;
+      previewTab.location.href = previewUrl;
     } catch (previewError) {
       console.error("EventForm: Failed to open preview", previewError);
     } finally {
