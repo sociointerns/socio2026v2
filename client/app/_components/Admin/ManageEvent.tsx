@@ -741,6 +741,7 @@ interface FestOption {
   category: string;
   campusHostedAt: string;
   allowedCampuses: string[];
+  allowOutsiders: boolean;
 }
 
 const toCanonical = (value: string): string =>
@@ -855,6 +856,12 @@ const normalizeAllowedCampuses = (value: unknown): string[] =>
     )
   );
 
+const normalizeBoolean = (value: unknown): boolean =>
+  value === true || value === "true" || value === 1 || value === "1";
+
+const isArchivedFest = (fest: any): boolean =>
+  normalizeBoolean(fest?.is_archived) || normalizeBoolean(fest?.archived_effective);
+
 export default function EventForm({
   onSubmit,
   onSubmitDraft,
@@ -876,16 +883,19 @@ export default function EventForm({
       try {
         const fests = await getFests();
         if (fests) {
-          const options: FestOption[] = fests.map((f: any) => ({
-            value: f.fest_id || f.id || f.fest_title || f.title || "Untitled Fest",
-            label: f.fest_title || f.title || "Untitled Fest",
-            departmentAccess: normalizeDepartmentAccess(f.department_access),
-            organizingDept:
-              typeof f.organizing_dept === "string" ? f.organizing_dept.trim() : "",
-            category: normalizeCategoryValue(f.category),
-            campusHostedAt: normalizeCampusHostedAt(f.campus_hosted_at),
-            allowedCampuses: normalizeAllowedCampuses(f.allowed_campuses),
-          }));
+          const options: FestOption[] = fests
+            .filter((f: any) => !isArchivedFest(f))
+            .map((f: any) => ({
+              value: f.fest_id || f.id || f.fest_title || f.title || "Untitled Fest",
+              label: f.fest_title || f.title || "Untitled Fest",
+              departmentAccess: normalizeDepartmentAccess(f.department_access),
+              organizingDept:
+                typeof f.organizing_dept === "string" ? f.organizing_dept.trim() : "",
+              category: normalizeCategoryValue(f.category),
+              campusHostedAt: normalizeCampusHostedAt(f.campus_hosted_at),
+              allowedCampuses: normalizeAllowedCampuses(f.allowed_campuses),
+              allowOutsiders: normalizeBoolean(f.allow_outsiders ?? f.allowOutsiders),
+            }));
           setFetchedFests([
             {
               value: "none",
@@ -895,6 +905,7 @@ export default function EventForm({
               category: "",
               campusHostedAt: "",
               allowedCampuses: [],
+              allowOutsiders: false,
             },
             ...options,
           ]);
@@ -1039,8 +1050,6 @@ export default function EventForm({
   }, [watchedEventDate, setValue, isEditMode, watch]);
 
   useEffect(() => {
-    if (isEditMode) return;
-
     if (!watchedFestEvent || watchedFestEvent === "none") {
       setValue("department", [], {
         shouldDirty: true,
@@ -1059,6 +1068,10 @@ export default function EventForm({
         shouldValidate: true,
       });
       setValue("allowedCampuses", [], {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      setValue("allowOutsiders", false, {
         shouldDirty: true,
         shouldValidate: true,
       });
@@ -1088,7 +1101,11 @@ export default function EventForm({
       shouldDirty: true,
       shouldValidate: true,
     });
-  }, [isEditMode, watchedFestEvent, fetchedFests, setValue]);
+    setValue("allowOutsiders", selectedFest.allowOutsiders, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+  }, [watchedFestEvent, fetchedFests, setValue]);
 
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [isNavigating, setIsNavigating] = React.useState(false);
