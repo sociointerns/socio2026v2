@@ -965,6 +965,8 @@ export default function EventForm({
   const [showRegistrationsClosedModal, setShowRegistrationsClosedModal] =
     React.useState(false);
   const [isOpeningPreview, setIsOpeningPreview] = React.useState(false);
+  const [isActionsDropdownOpen, setIsActionsDropdownOpen] = React.useState(false);
+  const actionsDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (
@@ -1335,6 +1337,19 @@ export default function EventForm({
       console.warn("EventForm: Validation errors present:", errors);
     }
   }, [errors]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        actionsDropdownRef.current &&
+        !actionsDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsActionsDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const BackIcon = () => (
     <svg
@@ -2193,74 +2208,109 @@ export default function EventForm({
                     Cancel
                   </button>
                   
-                  {isEditMode && (
-                    <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
-                      {onToggleArchive && !isDraft && (
-                        <button
-                          type="button"
-                          onClick={onToggleArchive}
-                          disabled={isArchiveUpdating || isSubmittingProp || rhfIsSubmitting || isDeleting}
-                          className={`w-full sm:w-auto px-4 py-2.5 text-sm font-medium rounded-md border transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed ${
-                            isArchiveUpdating || isSubmittingProp || rhfIsSubmitting || isDeleting
-                              ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
-                              : isArchived
-                                ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 focus:ring-emerald-500"
-                                : "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 focus:ring-amber-500"
-                          }`}
-                        >
-                          {isArchiveUpdating ? "Saving..." : isArchived ? "Restore" : "Archive"}
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={closeRegistration}
-                        disabled={isSubmittingProp || rhfIsSubmitting || isDeleting}
-                        className="w-full sm:w-auto px-4 py-2.5 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-md hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
-                      >
-                        Close Registrations
-                      </button>
-                      <button
-                        type="button"
-                        onClick={openDeleteConfirmation}
-                        disabled={isDeleting || isSubmittingProp || rhfIsSubmitting}
-                        className="w-full sm:w-auto px-4 py-2.5 border border-red-300 bg-red-600 text-white text-sm font-medium rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
-                      >
-                        {isDeleting ? "Deleting..." : "Delete"}
-                      </button>
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={handlePreview}
-                    disabled={
-                      isSubmittingProp ||
-                      rhfIsSubmitting ||
-                      isDeleting ||
-                      isOpeningPreview
-                    }
-                    className="w-full sm:w-auto px-5 py-2.5 border border-[#154CB3] text-[#154CB3] bg-white text-sm font-medium rounded-md hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-[#154CB3] focus:ring-offset-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
-                  >
-                    {isOpeningPreview ? "Opening preview..." : "Preview"}
-                  </button>
-
-                  {onSubmitDraft && (
+                  <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                     <button
                       type="button"
-                      onClick={handleSubmit(processDraftSubmit)}
+                      onClick={handlePreview}
                       disabled={
                         isSubmittingProp ||
                         rhfIsSubmitting ||
                         isDeleting ||
                         isOpeningPreview
                       }
-                      className="w-full sm:w-auto px-5 py-2.5 border border-amber-400 text-amber-800 bg-amber-50 text-sm font-medium rounded-md hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+                      className="w-full sm:w-auto px-5 py-2.5 border border-[#154CB3] text-[#154CB3] bg-white text-sm font-medium rounded-md hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-[#154CB3] focus:ring-offset-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
                     >
-                      {isSubmittingProp || rhfIsSubmitting
-                        ? "Saving Draft..."
-                        : "Save as Draft"}
+                      {isOpeningPreview ? "Opening preview..." : "Preview"}
                     </button>
-                  )}
+
+                    {onSubmitDraft && (
+                      <button
+                        type="button"
+                        onClick={handleSubmit(processDraftSubmit)}
+                        disabled={
+                          isSubmittingProp ||
+                          rhfIsSubmitting ||
+                          isDeleting ||
+                          isOpeningPreview
+                        }
+                        className="w-full sm:w-auto px-5 py-2.5 border border-amber-400 text-amber-800 bg-amber-50 text-sm font-medium rounded-md hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+                      >
+                        {isSubmittingProp || rhfIsSubmitting
+                          ? "Saving Draft..."
+                          : "Save as Draft"}
+                      </button>
+                    )}
+
+                    {isEditMode && (
+                      <div className="relative" ref={actionsDropdownRef}>
+                        <button
+                          type="button"
+                          onClick={() => setIsActionsDropdownOpen(!isActionsDropdownOpen)}
+                          disabled={isArchiveUpdating || isSubmittingProp || rhfIsSubmitting || isDeleting}
+                          className="w-full sm:w-auto px-4 py-2.5 border border-gray-300 text-gray-700 bg-white text-sm font-medium rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
+                        >
+                          <span>More actions</span>
+                          <svg className={`w-4 h-4 transition-transform ${isActionsDropdownOpen ? 'rotate-180' : ''}`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                          </svg>
+                        </button>
+                        {isActionsDropdownOpen && (
+                          <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-10">
+                            {onToggleArchive && !isDraft && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onToggleArchive();
+                                  setIsActionsDropdownOpen(false);
+                                }}
+                                disabled={isArchiveUpdating || isSubmittingProp || rhfIsSubmitting || isDeleting}
+                                className={`w-full text-left px-4 py-3 text-sm font-medium border-b border-gray-100 first:rounded-t-lg last:border-b-0 last:rounded-b-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2 ${
+                                  isArchiveUpdating || isSubmittingProp || rhfIsSubmitting || isDeleting
+                                    ? "text-gray-500 cursor-not-allowed"
+                                    : isArchived
+                                    ? "text-emerald-600 hover:bg-emerald-50"
+                                    : "text-amber-600 hover:bg-amber-50"
+                                }`}
+                              >
+                                <svg className="w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h6a2 2 0 012 2v2h4a1 1 0 110 2h-1v12a2 2 0 01-2 2H7a2 2 0 01-2-2V9H4a1 1 0 110-2h4V5z" />
+                                </svg>
+                                {isArchiveUpdating ? "Saving..." : isArchived ? "Restore" : "Archive"}
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                closeRegistration();
+                                setIsActionsDropdownOpen(false);
+                              }}
+                              disabled={isSubmittingProp || rhfIsSubmitting || isDeleting}
+                              className="w-full text-left px-4 py-3 text-red-600 hover:bg-red-50 text-sm font-medium border-b border-gray-100 first:rounded-t-lg last:border-b-0 last:rounded-b-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
+                            >
+                              <svg className="w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16H9v-4h4v4zM9 8h4V4H9v4zM7 20h10a2 2 0 002-2V4a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                              </svg>
+                              Close Registrations
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                openDeleteConfirmation();
+                                setIsActionsDropdownOpen(false);
+                              }}
+                              disabled={isDeleting || isSubmittingProp || rhfIsSubmitting}
+                              className="w-full text-left px-4 py-3 text-red-600 hover:bg-red-50 text-sm font-medium last:rounded-b-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
+                            >
+                              <svg className="w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                              {isDeleting ? "Deleting..." : "Delete Event"}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   
                   <button
                     type="submit"
