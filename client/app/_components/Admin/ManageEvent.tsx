@@ -9,7 +9,7 @@ import {
   useWatch,
   Control,
 } from "react-hook-form";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import {
   EventFormData,
@@ -34,6 +34,10 @@ import { DynamicCustomFieldBuilder, CustomField } from "@/app/_components/UI/Dyn
 import { useAuth } from "@/context/AuthContext";
 import LoadingIndicator from "@/app/_components/UI/LoadingIndicator";
 import PublishingOverlay from "@/app/_components/UI/PublishingOverlay";
+import {
+  buildEventPreviewData,
+  saveEventPreviewDraft,
+} from "@/app/lib/eventPreviewDraft";
 
 export const formatDateToYYYYMMDD = (date: Date): string => {
   const year = date.getFullYear();
@@ -899,6 +903,7 @@ export default function EventForm({
   }, []);
 
   const router = useRouter();
+  const pathname = usePathname();
   const {
     register,
     handleSubmit,
@@ -908,6 +913,7 @@ export default function EventForm({
     watch,
     reset,
     trigger,
+    getValues,
   } = useForm<EventFormData>({
     // Schema resolver can be re-enabled later if validation is restored here.
     defaultValues: {
@@ -954,6 +960,7 @@ export default function EventForm({
     React.useState(false);
   const [showRegistrationsClosedModal, setShowRegistrationsClosedModal] =
     React.useState(false);
+  const [isOpeningPreview, setIsOpeningPreview] = React.useState(false);
 
   useEffect(() => {
     if (
@@ -1097,6 +1104,40 @@ export default function EventForm({
         error.message,
         error
       );
+    }
+  };
+
+  const handlePreview = async () => {
+    if (isSubmittingProp || rhfIsSubmitting || isDeleting || isOpeningPreview) {
+      return;
+    }
+
+    setIsOpeningPreview(true);
+    try {
+      const isValid = await trigger();
+      if (!isValid) {
+        return;
+      }
+
+      const formData = getValues();
+      const previewData = buildEventPreviewData({
+        formData,
+        sourcePath: pathname || "/create/event",
+        existingImageFileUrl,
+        existingBannerFileUrl,
+        existingPdfFileUrl,
+      });
+      const previewDraftKey = saveEventPreviewDraft(previewData);
+
+      const previewUrl = `/event/preview?draft=${encodeURIComponent(previewDraftKey)}`;
+      const previewTab = window.open(previewUrl, "_blank", "noopener,noreferrer");
+      if (!previewTab) {
+        router.push(previewUrl);
+      }
+    } catch (previewError) {
+      console.error("EventForm: Failed to open preview", previewError);
+    } finally {
+      setIsOpeningPreview(false);
     }
   };
 
@@ -2099,7 +2140,12 @@ export default function EventForm({
                   <button
                     type="button"
                     onClick={handleNavigationToDashboard}
-                    disabled={isSubmittingProp || rhfIsSubmitting || isDeleting}
+                    disabled={
+                      isSubmittingProp ||
+                      rhfIsSubmitting ||
+                      isDeleting ||
+                      isOpeningPreview
+                    }
                     className="w-full sm:w-auto px-5 py-2.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#154CB3] focus:ring-offset-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
                   >
                     Cancel
@@ -2141,10 +2187,29 @@ export default function EventForm({
                       </button>
                     </div>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={handlePreview}
+                    disabled={
+                      isSubmittingProp ||
+                      rhfIsSubmitting ||
+                      isDeleting ||
+                      isOpeningPreview
+                    }
+                    className="w-full sm:w-auto px-5 py-2.5 border border-[#154CB3] text-[#154CB3] bg-white text-sm font-medium rounded-md hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-[#154CB3] focus:ring-offset-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    {isOpeningPreview ? "Opening preview..." : "Preview"}
+                  </button>
                   
                   <button
                     type="submit"
-                    disabled={isSubmittingProp || rhfIsSubmitting || isDeleting}
+                    disabled={
+                      isSubmittingProp ||
+                      rhfIsSubmitting ||
+                      isDeleting ||
+                      isOpeningPreview
+                    }
                     className="w-full sm:w-auto px-6 py-2.5 bg-[#154CB3] text-white text-sm font-medium rounded-md hover:bg-[#0f3a7a] focus:outline-none focus:ring-2 focus:ring-[#154CB3] focus:ring-offset-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
                   >
                     {isSubmittingProp || rhfIsSubmitting
