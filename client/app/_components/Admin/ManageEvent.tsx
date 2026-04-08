@@ -1006,12 +1006,12 @@ export default function EventForm({
       setValue("maxParticipants", "1", { shouldValidate: false });
       setValue("minParticipants", "1", { shouldValidate: false });
     } else {
-      // Auto-fill to 1 when team event is enabled, if not already set
+      // Auto-fill to 2 when team event is enabled (1 is just the registrant themselves), if not already set
       if (!watch("minParticipants")) {
-        setValue("minParticipants", "1", { shouldValidate: false });
+        setValue("minParticipants", "2", { shouldValidate: false });
       }
       if (!watch("maxParticipants")) {
-        setValue("maxParticipants", "1", { shouldValidate: false });
+        setValue("maxParticipants", "2", { shouldValidate: false });
       }
     }
   }, [watchedIsTeamEvent, setValue, watch]);
@@ -1705,7 +1705,7 @@ export default function EventForm({
                                   {...field}
                                   type="text"
                                   inputMode="numeric"
-                                  placeholder="e.g., 1"
+                                  placeholder="e.g., 2"
                                   className={`w-full px-3 py-2 text-sm rounded-lg border transition-all ${
                                     fieldState.error
                                       ? "border-red-500 focus:ring-red-500"
