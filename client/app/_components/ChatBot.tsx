@@ -1331,11 +1331,23 @@ export default function ChatBot() {
                             className="text-blue-50/95"
                           />
                         )
-                        : renderAssistantContent(msg.content))
+                        : i === messages.length - 1 && (isTyping || isThinking)
+                          ? (
+                            <TextType
+                              as="div"
+                              text={msg.content}
+                              typingSpeed={20}
+                              deletingSpeed={12}
+                              pauseDuration={900}
+                              loop={false}
+                              showCursor
+                              cursorCharacter="_"
+                              cursorClassName="text-cyan-200"
+                              className="text-blue-50/95"
+                            />
+                          )
+                          : renderAssistantContent(msg.content))
                       : msg.content}
-                    {isTyping && msg.role === "assistant" && i === messages.length - 1 && (
-                      <span className="ml-1 inline-block h-4 w-[2px] animate-pulse rounded bg-cyan-200 align-middle" />
-                    )}
                   </div>
                 </div>
               ))}
