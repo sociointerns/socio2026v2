@@ -98,19 +98,34 @@ export default async function HodManagePage() {
     redirect("/error");
   }
 
-  const [dashboardData, departmentLookup] = await Promise.all([
-    fetchHodDashboardData({
+  const fallbackDashboardData: Awaited<ReturnType<typeof fetchHodDashboardData>> = {
+    queue: [],
+    metrics: {
+      deptBudgetUsedYtd: 0,
+      pendingL1Approvals: 0,
+    },
+  };
+
+  let dashboardData: Awaited<ReturnType<typeof fetchHodDashboardData>> = fallbackDashboardData;
+  let dashboardErrorMessage: string | null = null;
+
+  const departmentLookup = departmentId
+    ? await supabase
+        .from("departments_courses")
+        .select("department_name")
+        .eq("id", departmentId)
+        .maybeSingle()
+    : { data: null };
+
+  try {
+    dashboardData = await fetchHodDashboardData({
       supabase,
       departmentId: departmentId || null,
-    }),
-    departmentId
-      ? supabase
-          .from("departments_courses")
-          .select("department_name")
-          .eq("id", departmentId)
-          .maybeSingle()
-      : Promise.resolve({ data: null }),
-  ]);
+    });
+  } catch (error) {
+    dashboardErrorMessage =
+      error instanceof Error ? error.message : "Unable to load HOD dashboard data right now.";
+  }
 
   const departmentName =
     String(departmentLookup?.data?.department_name || "").trim() ||
@@ -118,6 +133,11 @@ export default async function HodManagePage() {
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      {dashboardErrorMessage ? (
+        <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+          {dashboardErrorMessage}
+        </div>
+      ) : null}
       <HodDashboardClient
         departmentName={departmentName}
         initialQueue={dashboardData.queue}
