@@ -78,6 +78,7 @@ export async function middleware(req: NextRequest) {
   const isHodManagementRoute = pathname.startsWith("/manage/hod");
   const isDeanManagementRoute = pathname.startsWith("/manage/dean");
   const isCfoManagementRoute = pathname.startsWith("/manage/cfo");
+  const isStudentOrganiserManagementRoute = pathname.startsWith("/manage/student-organiser");
   const isFinanceManagementRoute = pathname.startsWith("/manage/finance");
 
   if (user && isManagementRoute) {
@@ -99,6 +100,7 @@ export async function middleware(req: NextRequest) {
       Boolean((userData as any)?.is_dean) ||
       Boolean((userData as any)?.is_cfo) ||
       universityRole === "cfo" ||
+      universityRole === "student_organiser" ||
       Boolean((userData as any)?.is_finance_officer) ||
       universityRole === "finance_officer";
     const canAccessHodRoute =
@@ -113,6 +115,8 @@ export async function middleware(req: NextRequest) {
       Boolean(userData?.is_masteradmin) ||
       Boolean((userData as any)?.is_cfo) ||
       universityRole === "cfo";
+    const canAccessStudentOrganiserRoute =
+      universityRole === "student_organiser";
     const canAccessFinanceRoute =
       Boolean((userData as any)?.is_finance_officer) ||
       universityRole === "finance_officer";
@@ -129,6 +133,10 @@ export async function middleware(req: NextRequest) {
       return redirect("/error");
     }
 
+    if (isStudentOrganiserManagementRoute && (error || !userData || !canAccessStudentOrganiserRoute)) {
+      return redirect("/error");
+    }
+
     if (isFinanceManagementRoute && (error || !userData || !canAccessFinanceRoute)) {
       return redirect("/error");
     }
@@ -137,6 +145,7 @@ export async function middleware(req: NextRequest) {
       !isHodManagementRoute &&
       !isDeanManagementRoute &&
       !isCfoManagementRoute &&
+      !isStudentOrganiserManagementRoute &&
       !isFinanceManagementRoute &&
       isManagementRoute &&
       (error || !userData || !canManage)

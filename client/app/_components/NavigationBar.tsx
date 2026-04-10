@@ -94,6 +94,7 @@ function NavigationBar() {
   const isHod = Boolean((userData as any)?.is_hod) || universityRole === "hod";
   const isDean = Boolean((userData as any)?.is_dean) || universityRole === "dean";
   const isCfo = Boolean((userData as any)?.is_cfo) || universityRole === "cfo";
+  const isStudentOrganiser = universityRole === "student_organiser";
   const isFinanceOfficer =
     Boolean((userData as any)?.is_finance_officer) ||
     universityRole === "finance_officer";
@@ -101,7 +102,14 @@ function NavigationBar() {
   const canOpenDeanDashboard = isDean || isMasterAdmin;
   const canOpenCfoDashboard = isCfo || isMasterAdmin;
   const canOpenFinanceDashboard = isFinanceOfficer;
-  const isManagementUser = isMasterAdmin || isOrganiser || isHod || isDean || isCfo || isFinanceOfficer;
+  const isManagementUser =
+    isMasterAdmin ||
+    isOrganiser ||
+    isStudentOrganiser ||
+    isHod ||
+    isDean ||
+    isCfo ||
+    isFinanceOfficer;
 
   useEffect(() => {
     setAvatarLoadError(false);
