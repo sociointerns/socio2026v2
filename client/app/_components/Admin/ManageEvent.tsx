@@ -1601,11 +1601,15 @@ export default function EventForm({
 
       const fieldErrors = incoming as Record<string, unknown>;
       const entries = Object.entries(fieldErrors).filter(
-        ([path, message]) =>
-          typeof path === "string" &&
-          path.trim().length > 0 &&
-          typeof message === "string" &&
-          message.trim().length > 0
+        (entry): entry is [string, string] => {
+          const [path, message] = entry;
+          return (
+            typeof path === "string" &&
+            path.trim().length > 0 &&
+            typeof message === "string" &&
+            message.trim().length > 0
+          );
+        }
       );
 
       if (entries.length === 0) return;
