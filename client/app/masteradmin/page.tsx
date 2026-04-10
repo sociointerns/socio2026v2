@@ -775,23 +775,33 @@ export default function MasterAdminPage() {
 
   const saveRoleChanges = async (user: User) => {
     try {
+      const normalizeOptionalText = (value: unknown): string | null => {
+        if (value === null || value === undefined) {
+          return null;
+        }
+        return String(value).trim() || null;
+      };
+
       const scopedRole = deriveScopedRoleFromUser(editingUserRoles);
       const isHodScoped = scopedRole === "hod";
       const isDeanScoped = scopedRole === "dean";
       const isCfoScoped = scopedRole === "cfo";
       const isFinanceScoped = scopedRole === "finance_officer";
-      const selectedDepartmentId =
-        editingUserRoles.department_id !== undefined && editingUserRoles.department_id !== null
-          ? String(editingUserRoles.department_id).trim() || null
-          : null;
-      const selectedSchoolId =
-        editingUserRoles.school_id !== undefined && editingUserRoles.school_id !== null
-          ? String(editingUserRoles.school_id).trim() || null
-          : null;
-      const selectedCampus =
-        editingUserRoles.campus !== undefined && editingUserRoles.campus !== null
-          ? String(editingUserRoles.campus).trim() || null
-          : null;
+      const selectedDepartmentId = normalizeOptionalText(editingUserRoles.department_id);
+      const selectedSchoolId = normalizeOptionalText(editingUserRoles.school_id);
+      const selectedCampus = normalizeOptionalText(editingUserRoles.campus);
+      const initialScopedRole = deriveScopedRoleFromUser(user);
+      const initialDepartmentId =
+        initialScopedRole === "hod" ? normalizeOptionalText(user.department_id) : null;
+      const initialSchoolId =
+        initialScopedRole === "dean" ? normalizeOptionalText(user.school_id) : null;
+      const initialCampus =
+        initialScopedRole === "cfo" ? normalizeOptionalText(user.campus) : null;
+      const hasScopedRoleChange =
+        initialScopedRole !== scopedRole ||
+        (scopedRole === "hod" && initialDepartmentId !== selectedDepartmentId) ||
+        (scopedRole === "dean" && initialSchoolId !== selectedSchoolId) ||
+        (scopedRole === "cfo" && initialCampus !== selectedCampus);
       const availableCampuses =
         campusScopeOptions.length > 0 ? campusScopeOptions : CAMPUS_SCOPE_FALLBACK;
 
@@ -821,28 +831,33 @@ export default function MasterAdminPage() {
       }
 
       const token = await getFreshToken();
+      const payload: Record<string, unknown> = {
+        is_organiser: editingUserRoles.is_organiser,
+        organiser_expires_at: editingUserRoles.organiser_expires_at || null,
+        is_support: editingUserRoles.is_support,
+        support_expires_at: editingUserRoles.support_expires_at || null,
+        is_masteradmin: editingUserRoles.is_masteradmin,
+        masteradmin_expires_at: editingUserRoles.masteradmin_expires_at || null,
+      };
+
+      if (hasScopedRoleChange) {
+        payload.is_hod = isHodScoped;
+        payload.is_dean = isDeanScoped;
+        payload.is_cfo = isCfoScoped;
+        payload.is_finance_officer = isFinanceScoped;
+        payload.university_role = scopedRole;
+        payload.department_id = isHodScoped ? selectedDepartmentId : null;
+        payload.school_id = isDeanScoped ? selectedSchoolId : null;
+        payload.campus = isCfoScoped ? selectedCampus : null;
+      }
+
       const response = await fetch(`${API_URL}/api/users/${encodeURIComponent(user.email)}/roles`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          is_organiser: editingUserRoles.is_organiser,
-          organiser_expires_at: editingUserRoles.organiser_expires_at || null,
-          is_support: editingUserRoles.is_support,
-          support_expires_at: editingUserRoles.support_expires_at || null,
-          is_masteradmin: editingUserRoles.is_masteradmin,
-          masteradmin_expires_at: editingUserRoles.masteradmin_expires_at || null,
-          is_hod: isHodScoped,
-          is_dean: isDeanScoped,
-          is_cfo: isCfoScoped,
-          is_finance_officer: isFinanceScoped,
-          university_role: scopedRole,
-          department_id: isHodScoped ? selectedDepartmentId : null,
-          school_id: isDeanScoped ? selectedSchoolId : null,
-          campus: isCfoScoped ? selectedCampus : null,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
@@ -1085,6 +1100,14 @@ export default function MasterAdminPage() {
                 <Eye className="w-4 h-4" />
               </span>
               Dean View
+            </span>
+          </Link>
+          <Link href="/manage/finance">
+            <span className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-all font-medium">
+              <span className="text-slate-400">
+                <Eye className="w-4 h-4" />
+              </span>
+              Finance View
             </span>
           </Link>
         </div>

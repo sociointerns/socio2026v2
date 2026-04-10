@@ -65,11 +65,16 @@ create table if not exists public.finance_audit_log (
   created_at timestamptz not null default now()
 );
 
-create index if not exists idx_event_budgets_settlement_status
-  on public.event_budgets(settlement_status);
+do $$
+begin
+  if to_regclass('public.event_budgets') is not null then
+    create index if not exists idx_event_budgets_settlement_status
+      on public.event_budgets(settlement_status);
 
-create index if not exists idx_event_budgets_finance_status
-  on public.event_budgets(finance_status);
+    create index if not exists idx_event_budgets_finance_status
+      on public.event_budgets(finance_status);
+  end if;
+end $$;
 
 create index if not exists idx_expense_documents_event_id
   on public.expense_documents(event_id);
