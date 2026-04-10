@@ -10,9 +10,32 @@ import FunkyButton from "./FunkyButton";
 
 const Hero = () => {
   const heroRef = useRef<HTMLDivElement>(null);
-  const { session, isLoading } = useAuth();
+  const { session, isLoading, userData, isMasterAdmin } = useAuth();
   const router = useRouter();
   const [startTyping, setStartTyping] = useState(false);
+
+  const universityRole = String((userData as any)?.university_role || "").toLowerCase().trim();
+  const isOrganiser = Boolean((userData as any)?.is_organiser);
+  const isHod = Boolean((userData as any)?.is_hod) || universityRole === "hod";
+  const isDean = Boolean((userData as any)?.is_dean) || universityRole === "dean";
+  const isCfo = Boolean((userData as any)?.is_cfo) || universityRole === "cfo";
+  const isFinanceOfficer =
+    Boolean((userData as any)?.is_finance_officer) ||
+    universityRole === "finance_officer";
+
+  const roleDashboardPath = isMasterAdmin
+    ? "/masteradmin"
+    : isOrganiser
+      ? "/manage"
+      : isHod
+        ? "/manage/hod"
+        : isDean
+          ? "/manage/dean"
+          : isCfo
+            ? "/manage/cfo"
+            : isFinanceOfficer
+              ? "/manage/finance"
+              : null;
 
 
   const handleSignInWithGoogle = async () => {
@@ -140,6 +163,14 @@ const Hero = () => {
                 router.push("/auth");
               }}
             />
+          )}
+          {session && !isLoading && roleDashboardPath && (
+            <button
+              onClick={() => router.push(roleDashboardPath)}
+              className="cursor-pointer font-semibold px-6 py-2.5 sm:px-6 sm:py-3 border-2 border-[#063168] text-sm sm:text-base rounded-md text-white bg-[#063168] hover:bg-[#154CB3] whitespace-nowrap transition-all duration-300 ease-in-out hover:shadow-md"
+            >
+              Open Dashboard
+            </button>
           )}
           <button
             onClick={handleExploreClick}

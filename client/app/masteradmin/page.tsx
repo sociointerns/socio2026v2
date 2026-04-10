@@ -1277,6 +1277,10 @@ export default function MasterAdminPage() {
                         {users.map((user) => {
                           const isEditing = editingUserId === user.id;
                           const displayRoles = isEditing ? editingUserRoles : user;
+                          const { isHod: isDisplayHod, isDean: isDisplayDean, isCfo: isDisplayCfo, isFinanceOfficer: isDisplayFinanceOfficer } =
+                            scopedRoleBooleans(displayRoles);
+                          const availableCampuses =
+                            campusScopeOptions.length > 0 ? campusScopeOptions : CAMPUS_SCOPE_FALLBACK;
 
                           return (
                             <tr key={user.email} className="hover:bg-gray-50 transition-colors">
@@ -1356,16 +1360,16 @@ export default function MasterAdminPage() {
                                   <label className="flex items-center gap-2 cursor-pointer">
                                     <input
                                       type="checkbox"
-                                      checked={displayRoles.is_hod || false}
+                                      checked={isDisplayHod}
                                       onChange={() => isEditing && handleRoleToggle("is_hod")}
                                       disabled={!isEditing}
                                       className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500 cursor-pointer disabled:opacity-50"
                                     />
-                                    <span className={`text-sm font-medium ${displayRoles.is_hod ? 'text-green-600' : 'text-gray-500'}`}>
-                                      {displayRoles.is_hod ? 'Enabled' : 'Disabled'}
+                                    <span className={`text-sm font-medium ${isDisplayHod ? 'text-green-600' : 'text-gray-500'}`}>
+                                      {isDisplayHod ? 'Enabled' : 'Disabled'}
                                     </span>
                                   </label>
-                                  {displayRoles.is_hod && (
+                                  {isDisplayHod && (
                                     <div className="mt-1">
                                       {isEditing ? (
                                         <select
@@ -1404,16 +1408,16 @@ export default function MasterAdminPage() {
                                   <label className="flex items-center gap-2 cursor-pointer">
                                     <input
                                       type="checkbox"
-                                      checked={displayRoles.is_dean || false}
+                                      checked={isDisplayDean}
                                       onChange={() => isEditing && handleRoleToggle("is_dean")}
                                       disabled={!isEditing}
                                       className="w-5 h-5 text-purple-600 rounded focus:ring-purple-500 cursor-pointer disabled:opacity-50"
                                     />
-                                    <span className={`text-sm font-medium ${displayRoles.is_dean ? 'text-green-600' : 'text-gray-500'}`}>
-                                      {displayRoles.is_dean ? 'Enabled' : 'Disabled'}
+                                    <span className={`text-sm font-medium ${isDisplayDean ? 'text-green-600' : 'text-gray-500'}`}>
+                                      {isDisplayDean ? 'Enabled' : 'Disabled'}
                                     </span>
                                   </label>
-                                  {displayRoles.is_dean && (
+                                  {isDisplayDean && (
                                     <div className="mt-1">
                                       {isEditing ? (
                                         <select
@@ -1441,6 +1445,71 @@ export default function MasterAdminPage() {
                                         </p>
                                       )}
                                     </div>
+                                  )}
+                                </div>
+                              </td>
+
+                              <td className="px-6 py-4">
+                                <div className="flex flex-col gap-2">
+                                  <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={isDisplayCfo}
+                                      onChange={() => isEditing && handleRoleToggle("is_cfo")}
+                                      disabled={!isEditing}
+                                      className="w-5 h-5 text-amber-600 rounded focus:ring-amber-500 cursor-pointer disabled:opacity-50"
+                                    />
+                                    <span className={`text-sm font-medium ${isDisplayCfo ? 'text-green-600' : 'text-gray-500'}`}>
+                                      {isDisplayCfo ? 'Enabled' : 'Disabled'}
+                                    </span>
+                                  </label>
+                                  {isDisplayCfo && (
+                                    <div className="mt-1">
+                                      {isEditing ? (
+                                        <select
+                                          value={displayRoles.campus || ""}
+                                          onChange={(event) =>
+                                            handleRoleScopeChange("campus", event.target.value || null)
+                                          }
+                                          aria-label="Select CFO campus"
+                                          title="Select CFO campus"
+                                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                                        >
+                                          <option value="">Select campus</option>
+                                          {availableCampuses.map((campusName) => (
+                                            <option key={campusName} value={campusName}>
+                                              {campusName}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      ) : (
+                                        <p className="text-xs text-gray-600">
+                                          {displayRoles.campus || "No campus"}
+                                        </p>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+
+                              <td className="px-6 py-4">
+                                <div className="flex flex-col gap-2">
+                                  <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={isDisplayFinanceOfficer}
+                                      onChange={() => isEditing && handleRoleToggle("is_finance_officer")}
+                                      disabled={!isEditing}
+                                      className="w-5 h-5 text-emerald-600 rounded focus:ring-emerald-500 cursor-pointer disabled:opacity-50"
+                                    />
+                                    <span className={`text-sm font-medium ${isDisplayFinanceOfficer ? 'text-green-600' : 'text-gray-500'}`}>
+                                      {isDisplayFinanceOfficer ? 'Enabled' : 'Disabled'}
+                                    </span>
+                                  </label>
+                                  {isDisplayFinanceOfficer && (
+                                    <p className="text-xs text-emerald-700 font-medium">
+                                      Global Platform Access
+                                    </p>
                                   )}
                                 </div>
                               </td>
