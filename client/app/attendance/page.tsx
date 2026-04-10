@@ -1,6 +1,7 @@
 "use client";
 
 import React, { Suspense } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AttendanceManager } from "../_components/AttendanceManager";
 import LoadingIndicator from "../_components/UI/LoadingIndicator";
@@ -22,12 +23,12 @@ function AttendanceContent() {
             <p className="text-gray-600 mb-4">
               Missing event information. Please access this page through the event management dashboard.
             </p>
-            <a
+            <Link
               href="/manage"
               className="inline-flex items-center px-4 py-2 bg-[#154CB3] text-white rounded-lg hover:bg-[#154cb3eb] transition-colors"
             >
               Back to Dashboard
-            </a>
+            </Link>
           </div>
         </div>
       </div>
@@ -39,7 +40,7 @@ function AttendanceContent() {
       <div className="bg-[#063168] text-white p-4 sm:p-6 md:p-8">
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-wrap items-center gap-4 mb-4">
-            <a
+            <Link
               href="/manage"
               className="flex items-center text-[#FFCC00] hover:underline"
             >
@@ -58,13 +59,13 @@ function AttendanceContent() {
                 />
               </svg>
               Back to Dashboard
-            </a>
-            <a
+            </Link>
+            <Link
               href={`/event/${eventId}/participants`}
               className="flex items-center text-white/90 hover:underline"
             >
               View Participants
-            </a>
+            </Link>
           </div>
           <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold">
             Event Attendance
