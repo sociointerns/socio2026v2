@@ -40,6 +40,11 @@ desktop.ini
 *.swo
 *.swn
 
+# Agent skills
+.agents/skills/
+.*/skills/
+skills/
+
 # Database dumps and misc
 # Keep socios.sql tracked; ignore other top-level SQL files
 /*.sql

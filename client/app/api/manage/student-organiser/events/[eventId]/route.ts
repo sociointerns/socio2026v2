@@ -121,27 +121,26 @@ function sanitizeUrlList(value: unknown): string[] {
 function sanitizeRunsheetItems(value: unknown): GenericRecord[] {
   const raw = Array.isArray(value) ? value : [];
 
-  return raw
-    .map((entry, index) => {
-      const row = asRecord(entry);
-      const task = normalizeText(row.task || row.activity);
-      if (!task) {
-        return null;
-      }
+  return raw.reduce<GenericRecord[]>((acc, entry, index) => {
+    const row = asRecord(entry);
+    const task = normalizeText(row.task || row.activity);
+    if (!task) {
+      return acc;
+    }
 
-      return {
-        id: normalizeText(row.id) || `runsheet-${index + 1}`,
-        time: normalizeText(row.time),
-        task,
-        notes: normalizeText(row.notes),
-        order: Number.isFinite(toNumber(row.order)) ? toNumber(row.order) : index,
-        assignee_registration_id: normalizeText(
-          row.assignee_registration_id || row.assigneeRegistrationId
-        ) || null,
-        assignee_label: normalizeText(row.assignee_label || row.assigneeLabel) || null,
-      } satisfies GenericRecord;
-    })
-    .filter((row): row is GenericRecord => Boolean(row));
+    acc.push({
+      id: normalizeText(row.id) || `runsheet-${index + 1}`,
+      time: normalizeText(row.time),
+      task,
+      notes: normalizeText(row.notes),
+      order: Number.isFinite(toNumber(row.order)) ? toNumber(row.order) : index,
+      assignee_registration_id:
+        normalizeText(row.assignee_registration_id || row.assigneeRegistrationId) || null,
+      assignee_label: normalizeText(row.assignee_label || row.assigneeLabel) || null,
+    });
+
+    return acc;
+  }, []);
 }
 
 function resolveAction(value: unknown): ActionType | null {
