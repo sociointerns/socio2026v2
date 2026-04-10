@@ -52,6 +52,12 @@ router.get(
         case 'masteradmin':
           users = users.filter(user => user.is_masteradmin);
           break;
+        case 'hod':
+          users = users.filter(user => user.is_hod);
+          break;
+        case 'dean':
+          users = users.filter(user => user.is_dean);
+          break;
       }
     }
 
@@ -113,6 +119,44 @@ router.get(
     return res.status(500).json({ error: "Internal server error" });
   }
 });
+
+router.get(
+  "/role-scopes",
+  authenticateUser,
+  getUserInfo(),
+  checkRoleExpiration,
+  requireMasterAdmin,
+  async (req, res) => {
+    try {
+      const departmentRows = await queryAll("departments_courses");
+
+      const departments = (departmentRows || [])
+        .map((row) => ({
+          id: String(row.id || "").trim(),
+          department_name: String(row.department_name || "").trim(),
+          school: row.school ? String(row.school).trim() : null,
+        }))
+        .filter((row) => row.id.length > 0 && row.department_name.length > 0)
+        .sort((left, right) => left.department_name.localeCompare(right.department_name));
+
+      const schoolSet = new Set();
+      departments.forEach((row) => {
+        if (row.school && row.school.length > 0) {
+          schoolSet.add(row.school);
+        }
+      });
+
+      const schools = Array.from(schoolSet)
+        .sort((left, right) => left.localeCompare(right))
+        .map((name) => ({ id: name, name }));
+
+      return res.status(200).json({ departments, schools });
+    } catch (error) {
+      console.error("Error fetching role scope options:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
 
 router.get("/:email", async (req, res) => {
   try {
@@ -518,7 +562,11 @@ router.put("/:email/roles", authenticateUser, getUserInfo(), checkRoleExpiration
       is_support, 
       support_expires_at,
       is_masteradmin, 
-      masteradmin_expires_at 
+      masteradmin_expires_at,
+      is_hod,
+      is_dean,
+      department_id,
+      school_id
     } = req.body;
 
     // Check if user exists
@@ -555,6 +603,59 @@ router.put("/:email/roles", authenticateUser, getUserInfo(), checkRoleExpiration
     if (typeof is_masteradmin === 'boolean') {
       updates.is_masteradmin = is_masteradmin;
       updates.masteradmin_expires_at = masteradmin_expires_at || null;
+    }
+
+    const roleScopePayloadProvided =
+      typeof is_hod === 'boolean' ||
+      typeof is_dean === 'boolean' ||
+      department_id !== undefined ||
+      school_id !== undefined;
+
+    if (roleScopePayloadProvided) {
+      const nextIsHod = typeof is_hod === 'boolean' ? is_hod : Boolean(existingUser.is_hod);
+      const nextIsDean = typeof is_dean === 'boolean' ? is_dean : Boolean(existingUser.is_dean);
+
+      const rawDepartmentId =
+        department_id !== undefined
+          ? department_id
+          : existingUser.department_id;
+      const rawSchoolId =
+        school_id !== undefined
+          ? school_id
+          : existingUser.school_id;
+
+      const nextDepartmentId =
+        rawDepartmentId === null || rawDepartmentId === undefined
+          ? null
+          : String(rawDepartmentId).trim() || null;
+
+      const nextSchoolId =
+        rawSchoolId === null || rawSchoolId === undefined
+          ? null
+          : String(rawSchoolId).trim() || null;
+
+      if (nextIsHod && nextIsDean) {
+        return res.status(400).json({
+          error: "A user cannot be both HOD and Dean."
+        });
+      }
+
+      if (nextIsHod && !nextDepartmentId) {
+        return res.status(400).json({
+          error: "Select a department before enabling HOD."
+        });
+      }
+
+      if (nextIsDean && !nextSchoolId) {
+        return res.status(400).json({
+          error: "Select a school before enabling Dean."
+        });
+      }
+
+      updates.is_hod = nextIsHod;
+      updates.is_dean = nextIsDean;
+      updates.department_id = nextIsHod ? nextDepartmentId : null;
+      updates.school_id = nextIsDean ? nextSchoolId : null;
     }
 
     // Update user

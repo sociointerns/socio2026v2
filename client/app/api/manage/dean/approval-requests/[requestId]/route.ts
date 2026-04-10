@@ -146,7 +146,8 @@ export async function PATCH(
     }
 
     const universityRole = String(userProfile.university_role || "").toLowerCase().trim();
-    if (universityRole !== "dean") {
+    const isDeanUser = Boolean(userProfile.is_dean) || universityRole === "dean";
+    if (!isDeanUser) {
       return jsonError(403, "Only Dean users can perform L2 actions.");
     }
 

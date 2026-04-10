@@ -108,7 +108,8 @@ export default async function DeanManagePage() {
   }
 
   const universityRole = String(userProfile.university_role || "").toLowerCase().trim();
-  if (universityRole !== "dean") {
+  const isDeanUser = Boolean(userProfile.is_dean) || universityRole === "dean";
+  if (!isDeanUser) {
     redirect("/manage");
   }
 
@@ -120,14 +121,35 @@ export default async function DeanManagePage() {
   const campusName = String(userProfile.campus || "").trim();
   const l1Threshold = await resolveL1Threshold(supabase, campusName);
 
-  const dashboardData = await fetchDeanDashboardData({
-    supabase,
-    schoolId,
-    l1Threshold,
-  });
+  const fallbackDashboardData: Awaited<ReturnType<typeof fetchDeanDashboardData>> = {
+    queue: [],
+    metrics: {
+      pendingL2Approvals: 0,
+      pendingBudgetTotal: 0,
+    },
+    departmentKpis: [],
+  };
+  let dashboardData: Awaited<ReturnType<typeof fetchDeanDashboardData>> = fallbackDashboardData;
+  let dashboardErrorMessage: string | null = null;
+
+  try {
+    dashboardData = await fetchDeanDashboardData({
+      supabase,
+      schoolId,
+      l1Threshold,
+    });
+  } catch (error) {
+    dashboardErrorMessage =
+      error instanceof Error ? error.message : "Unable to load Dean dashboard data right now.";
+  }
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      {dashboardErrorMessage ? (
+        <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+          {dashboardErrorMessage}
+        </div>
+      ) : null}
       <DeanDashboardClient
         schoolName={schoolId}
         l1Threshold={l1Threshold}

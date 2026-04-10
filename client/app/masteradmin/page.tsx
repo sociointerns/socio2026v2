@@ -82,9 +82,25 @@ type User = {
   support_expires_at?: string | null;
   is_masteradmin: boolean;
   masteradmin_expires_at?: string | null;
+  is_hod?: boolean;
+  is_dean?: boolean;
+  department_id?: string | null;
+  school_id?: string | null;
+  university_role?: string | null;
   created_at: string;
   course?: string | null;
   register_number?: number | null;
+};
+
+type DepartmentScopeOption = {
+  id: string;
+  department_name: string;
+  school?: string | null;
+};
+
+type SchoolScopeOption = {
+  id: string;
+  name: string;
 };
 
 type Event = {
@@ -182,6 +198,8 @@ export default function MasterAdminPage() {
   const [roleFilter, setRoleFilter] = useState("all");
   const [editingUserId, setEditingUserId] = useState<number | null>(null);
   const [editingUserRoles, setEditingUserRoles] = useState<Partial<User>>({});
+  const [departmentScopeOptions, setDepartmentScopeOptions] = useState<DepartmentScopeOption[]>([]);
+  const [schoolScopeOptions, setSchoolScopeOptions] = useState<SchoolScopeOption[]>([]);
   const [showDeleteUserConfirm, setShowDeleteUserConfirm] = useState<string | null>(null);
   const [userPage, setUserPage] = useState(1);
   
@@ -247,6 +265,7 @@ export default function MasterAdminPage() {
     
     if (activeTab === "users") {
       fetchUsers();
+      fetchRoleScopeOptions();
     } else if (activeTab === "events") {
       fetchEvents();
     } else if (activeTab === "fests") {
@@ -452,6 +471,31 @@ export default function MasterAdminPage() {
     }
   };
 
+  const fetchRoleScopeOptions = async () => {
+    try {
+      const token = await getFreshToken();
+      if (!token) {
+        return;
+      }
+
+      const response = await fetch(`${API_URL}/api/users/role-scopes`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch role scope options");
+      }
+
+      const data = await response.json();
+      setDepartmentScopeOptions(Array.isArray(data?.departments) ? data.departments : []);
+      setSchoolScopeOptions(Array.isArray(data?.schools) ? data.schools : []);
+    } catch (error) {
+      console.error("Error fetching role scope options:", error);
+    }
+  };
+
   const fetchEvents = async (options?: { unpaged?: boolean }) => {
     try {
       setIsLoading(true);
@@ -552,14 +596,42 @@ export default function MasterAdminPage() {
       support_expires_at: user.support_expires_at,
       is_masteradmin: user.is_masteradmin,
       masteradmin_expires_at: user.masteradmin_expires_at,
+      is_hod: Boolean(user.is_hod),
+      is_dean: Boolean(user.is_dean),
+      department_id: user.department_id || null,
+      school_id: user.school_id || null,
     });
   };
 
-  const handleRoleToggle = (role: "is_organiser" | "is_support" | "is_masteradmin") => {
-    setEditingUserRoles(prev => ({
-      ...prev,
-      [role]: !prev[role]
-    }));
+  const handleRoleToggle = (
+    role: "is_organiser" | "is_support" | "is_masteradmin" | "is_hod" | "is_dean"
+  ) => {
+    setEditingUserRoles((prev) => {
+      const next = {
+        ...prev,
+        [role]: !prev[role],
+      };
+
+      if (role === "is_hod") {
+        if (next.is_hod) {
+          next.is_dean = false;
+          next.school_id = null;
+        } else {
+          next.department_id = null;
+        }
+      }
+
+      if (role === "is_dean") {
+        if (next.is_dean) {
+          next.is_hod = false;
+          next.department_id = null;
+        } else {
+          next.school_id = null;
+        }
+      }
+
+      return next;
+    });
   };
 
   const handleExpirationChange = (
@@ -569,6 +641,13 @@ export default function MasterAdminPage() {
     setEditingUserRoles(prev => ({
       ...prev,
       [field]: value
+    }));
+  };
+
+  const handleRoleScopeChange = (field: "department_id" | "school_id", value: string | null) => {
+    setEditingUserRoles((prev) => ({
+      ...prev,
+      [field]: value,
     }));
   };
 
@@ -588,6 +667,10 @@ export default function MasterAdminPage() {
           support_expires_at: editingUserRoles.support_expires_at || null,
           is_masteradmin: editingUserRoles.is_masteradmin,
           masteradmin_expires_at: editingUserRoles.masteradmin_expires_at || null,
+          is_hod: Boolean(editingUserRoles.is_hod),
+          is_dean: Boolean(editingUserRoles.is_dean),
+          department_id: editingUserRoles.department_id || null,
+          school_id: editingUserRoles.school_id || null,
         }),
       });
 
@@ -596,10 +679,13 @@ export default function MasterAdminPage() {
         throw new Error(error.error || "Failed to update roles");
       }
 
+      const updatedPayload = await response.json();
+      const updatedUser = updatedPayload?.user;
+
       // Update local state
       setUsers((prev) => prev.map((u) => 
         u.id === user.id 
-          ? { ...u, ...editingUserRoles }
+          ? { ...u, ...(updatedUser || editingUserRoles) }
           : u
       ));
       setEditingUserId(null);
@@ -937,6 +1023,8 @@ export default function MasterAdminPage() {
                     <option value="all">All Users</option>
                     <option value="organiser">Organisers</option>
                     <option value="support">Support</option>
+                    <option value="hod">HOD</option>
+                    <option value="dean">Dean</option>
                     <option value="masteradmin">Master Admins</option>
                   </select>
                 </div>
@@ -977,6 +1065,12 @@ export default function MasterAdminPage() {
                           </th>
                           <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                             Support
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                            HOD
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                            Dean
                           </th>
                           <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                             Master Admin
@@ -1065,6 +1159,100 @@ export default function MasterAdminPage() {
                                         colorScheme="green"
                                         label="Support expiration"
                                       />
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+
+                              <td className="px-6 py-4">
+                                <div className="flex flex-col gap-2">
+                                  <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={displayRoles.is_hod || false}
+                                      onChange={() => isEditing && handleRoleToggle("is_hod")}
+                                      disabled={!isEditing}
+                                      className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500 cursor-pointer disabled:opacity-50"
+                                    />
+                                    <span className={`text-sm font-medium ${displayRoles.is_hod ? 'text-green-600' : 'text-gray-500'}`}>
+                                      {displayRoles.is_hod ? 'Enabled' : 'Disabled'}
+                                    </span>
+                                  </label>
+                                  {displayRoles.is_hod && (
+                                    <div className="mt-1">
+                                      {isEditing ? (
+                                        <select
+                                          value={displayRoles.department_id || ""}
+                                          onChange={(event) =>
+                                            handleRoleScopeChange(
+                                              "department_id",
+                                              event.target.value || null
+                                            )
+                                          }
+                                          aria-label="Select HOD department"
+                                          title="Select HOD department"
+                                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                        >
+                                          <option value="">Select department</option>
+                                          {departmentScopeOptions.map((department) => (
+                                            <option key={department.id} value={department.id}>
+                                              {department.department_name}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      ) : (
+                                        <p className="text-xs text-gray-600">
+                                          {departmentScopeOptions.find(
+                                            (department) => department.id === displayRoles.department_id
+                                          )?.department_name || displayRoles.department_id || "No department"}
+                                        </p>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+
+                              <td className="px-6 py-4">
+                                <div className="flex flex-col gap-2">
+                                  <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={displayRoles.is_dean || false}
+                                      onChange={() => isEditing && handleRoleToggle("is_dean")}
+                                      disabled={!isEditing}
+                                      className="w-5 h-5 text-purple-600 rounded focus:ring-purple-500 cursor-pointer disabled:opacity-50"
+                                    />
+                                    <span className={`text-sm font-medium ${displayRoles.is_dean ? 'text-green-600' : 'text-gray-500'}`}>
+                                      {displayRoles.is_dean ? 'Enabled' : 'Disabled'}
+                                    </span>
+                                  </label>
+                                  {displayRoles.is_dean && (
+                                    <div className="mt-1">
+                                      {isEditing ? (
+                                        <select
+                                          value={displayRoles.school_id || ""}
+                                          onChange={(event) =>
+                                            handleRoleScopeChange("school_id", event.target.value || null)
+                                          }
+                                          aria-label="Select Dean school"
+                                          title="Select Dean school"
+                                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                                        >
+                                          <option value="">Select school</option>
+                                          {schoolScopeOptions.map((school) => (
+                                            <option key={school.id} value={school.id}>
+                                              {school.name}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      ) : (
+                                        <p className="text-xs text-gray-600">
+                                          {schoolScopeOptions.find((school) => school.id === displayRoles.school_id)
+                                            ?.name ||
+                                            displayRoles.school_id ||
+                                            "No school"}
+                                        </p>
+                                      )}
                                     </div>
                                   )}
                                 </div>

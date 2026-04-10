@@ -25,6 +25,7 @@ type UserData = {
   is_masteradmin: boolean;
   is_hod?: boolean;
   is_dean?: boolean;
+  university_role?: string | null;
   department_id?: string | null;
   school_id?: string | null;
   organiser_expires_at?: string | null;
@@ -349,6 +350,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         is_masteradmin: Boolean(data.user?.is_masteradmin),
         is_hod: Boolean(data.user?.is_hod),
         is_dean: Boolean(data.user?.is_dean),
+        university_role: data.user?.university_role
+          ? String(data.user.university_role).toLowerCase().trim()
+          : null,
       };
       setUserData(user);
       return user;
