@@ -193,6 +193,486 @@ const asBoolean = (value) => {
 
 const ORGANIZER_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 const ORGANIZER_EMAIL_MAX_LENGTH = 100;
+const STRICT_HHMM_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+const DEFAULT_ADDITIONAL_REQUESTS = {
+  it: {
+    enabled: false,
+    description: "",
+  },
+  venue: {
+    enabled: false,
+    selectedVenue: "",
+    customVenue: "",
+    startTime: "",
+    endTime: "",
+  },
+  catering: {
+    enabled: false,
+    approximateCount: "",
+    description: "",
+  },
+  stalls: {
+    enabled: false,
+    canopySelected: false,
+    canopyQuantity: "0",
+    canopyDescription: "",
+    hardboardSelected: false,
+    hardboardQuantity: "0",
+    hardboardDescription: "",
+  },
+  security: {
+    enabled: false,
+    description: "",
+  },
+};
+
+const buildAdditionalRequestsDefaults = () => ({
+  it: { ...DEFAULT_ADDITIONAL_REQUESTS.it },
+  venue: { ...DEFAULT_ADDITIONAL_REQUESTS.venue },
+  catering: { ...DEFAULT_ADDITIONAL_REQUESTS.catering },
+  stalls: { ...DEFAULT_ADDITIONAL_REQUESTS.stalls },
+  security: { ...DEFAULT_ADDITIONAL_REQUESTS.security },
+});
+
+const parseAdditionalRequestsValue = (value) => {
+  if (!value) return {};
+  if (typeof value === "object" && !Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return {};
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      return {};
+    }
+  }
+  return {};
+};
+
+const sanitizeAdditionalRequests = (value) => {
+  const defaults = buildAdditionalRequestsDefaults();
+  const parsed = parseAdditionalRequestsValue(value);
+
+  return {
+    it: {
+      ...defaults.it,
+      ...(parsed.it || {}),
+      description: normalizeSingleStringField(parsed?.it?.description || ""),
+    },
+    venue: {
+      ...defaults.venue,
+      ...(parsed.venue || {}),
+      selectedVenue: normalizeSingleStringField(parsed?.venue?.selectedVenue || ""),
+      customVenue: normalizeSingleStringField(parsed?.venue?.customVenue || ""),
+      startTime: normalizeSingleStringField(parsed?.venue?.startTime || ""),
+      endTime: normalizeSingleStringField(parsed?.venue?.endTime || ""),
+    },
+    catering: {
+      ...defaults.catering,
+      ...(parsed.catering || {}),
+      approximateCount: normalizeSingleStringField(parsed?.catering?.approximateCount || ""),
+      description: normalizeSingleStringField(parsed?.catering?.description || ""),
+    },
+    stalls: {
+      ...defaults.stalls,
+      ...(parsed.stalls || {}),
+      canopyQuantity: normalizeSingleStringField(parsed?.stalls?.canopyQuantity || "0"),
+      canopyDescription: normalizeSingleStringField(parsed?.stalls?.canopyDescription || ""),
+      hardboardQuantity: normalizeSingleStringField(parsed?.stalls?.hardboardQuantity || "0"),
+      hardboardDescription: normalizeSingleStringField(parsed?.stalls?.hardboardDescription || ""),
+    },
+    security: {
+      ...defaults.security,
+      ...(parsed.security || {}),
+      description: normalizeSingleStringField(parsed?.security?.description || ""),
+    },
+  };
+};
+
+const normalizeVenueLabel = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
+const parseStrictTimeToMinutes = (timeValue) => {
+  const normalized = normalizeSingleStringField(timeValue);
+  if (!STRICT_HHMM_REGEX.test(normalized)) return null;
+  const [hours, minutes] = normalized.split(":").map(Number);
+  return hours * 60 + minutes;
+};
+
+const formatMinutesToHHMM = (totalMinutes) => {
+  const safeMinutes = Number(totalMinutes);
+  if (!Number.isFinite(safeMinutes) || safeMinutes < 0) return "00:00";
+  const normalized = safeMinutes % (24 * 60);
+  const hours = Math.floor(normalized / 60)
+    .toString()
+    .padStart(2, "0");
+  const minutes = (normalized % 60).toString().padStart(2, "0");
+  return `${hours}:${minutes}`;
+};
+
+const normalizeExistingTime = (timeValue) => {
+  const normalized = normalizeSingleStringField(timeValue);
+  const match = /^(\d{1,2}):(\d{2})/.exec(normalized);
+  if (!match) return "";
+
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return "";
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return "";
+
+  return `${hour.toString().padStart(2, "0")}:${minute
+    .toString()
+    .padStart(2, "0")}`;
+};
+
+const parseDateOnlyValue = (value) => {
+  const parsed = getValidDate(value);
+  if (!parsed) return null;
+  const normalized = new Date(parsed);
+  normalized.setHours(0, 0, 0, 0);
+  return normalized;
+};
+
+const rangesOverlap = (rangeAStart, rangeAEnd, rangeBStart, rangeBEnd) => {
+  if (!rangeAStart || !rangeAEnd || !rangeBStart || !rangeBEnd) {
+    return false;
+  }
+
+  return (
+    rangeAStart.getTime() <= rangeBEnd.getTime() &&
+    rangeAEnd.getTime() >= rangeBStart.getTime()
+  );
+};
+
+const buildVenueBookingWindowFromEvent = (eventRecord) => {
+  const additionalRequests = sanitizeAdditionalRequests(eventRecord?.additional_requests);
+  const venueModuleEnabled = asBoolean(additionalRequests?.venue?.enabled);
+
+  const venueName = venueModuleEnabled
+    ? normalizeSingleStringField(
+        additionalRequests.venue.selectedVenue || additionalRequests.venue.customVenue
+      )
+    : normalizeSingleStringField(eventRecord?.venue || "");
+
+  if (!venueName) {
+    return null;
+  }
+
+  const startDate = parseDateOnlyValue(eventRecord?.event_date);
+  const endDate = parseDateOnlyValue(eventRecord?.end_date || eventRecord?.event_date);
+  if (!startDate || !endDate) {
+    return null;
+  }
+
+  const normalizedStartTime = venueModuleEnabled
+    ? normalizeSingleStringField(additionalRequests.venue.startTime)
+    : normalizeExistingTime(eventRecord?.event_time);
+
+  const normalizedEndTime = venueModuleEnabled
+    ? normalizeSingleStringField(additionalRequests.venue.endTime)
+    : "";
+
+  const startMinutes = parseStrictTimeToMinutes(normalizedStartTime);
+  if (startMinutes === null) {
+    return null;
+  }
+
+  const resolvedEndMinutesRaw = parseStrictTimeToMinutes(normalizedEndTime);
+  const endMinutes =
+    resolvedEndMinutesRaw !== null && resolvedEndMinutesRaw > startMinutes
+      ? resolvedEndMinutesRaw
+      : startMinutes + 60;
+
+  return {
+    eventId: eventRecord?.event_id || null,
+    venueName,
+    normalizedVenue: normalizeVenueLabel(venueName),
+    startDate,
+    endDate,
+    startMinutes,
+    endMinutes,
+    startTime: formatMinutesToHHMM(startMinutes),
+    endTime: formatMinutesToHHMM(endMinutes),
+  };
+};
+
+const validateAdditionalRequestsPayload = ({
+  additionalRequestsRaw,
+  hasFestSelected,
+  eventDate,
+  endDate,
+}) => {
+  const fieldErrors = {};
+
+  const addFieldError = (path, message) => {
+    if (!fieldErrors[path]) {
+      fieldErrors[path] = message;
+    }
+  };
+
+  const additionalRequests = sanitizeAdditionalRequests(additionalRequestsRaw);
+
+  if (!hasFestSelected) {
+    return {
+      fieldErrors,
+      additionalRequests: buildAdditionalRequestsDefaults(),
+      venueBooking: null,
+    };
+  }
+
+  if (asBoolean(additionalRequests.it.enabled)) {
+    if (!normalizeSingleStringField(additionalRequests.it.description)) {
+      addFieldError(
+        "additionalRequests.it.description",
+        "IT description is required when IT module is selected"
+      );
+    }
+  }
+
+  let venueBooking = null;
+  if (asBoolean(additionalRequests.venue.enabled)) {
+    const selectedVenue = normalizeSingleStringField(
+      additionalRequests.venue.selectedVenue
+    );
+    const customVenue = normalizeSingleStringField(
+      additionalRequests.venue.customVenue
+    );
+    const startTime = normalizeSingleStringField(additionalRequests.venue.startTime);
+    const endTime = normalizeSingleStringField(additionalRequests.venue.endTime);
+
+    if (!selectedVenue && !customVenue) {
+      addFieldError(
+        "additionalRequests.venue.selectedVenue",
+        "Select a predefined venue or enter a custom venue"
+      );
+    }
+
+    if (selectedVenue && customVenue) {
+      addFieldError(
+        "additionalRequests.venue.customVenue",
+        "Choose either predefined venue or custom venue, not both"
+      );
+    }
+
+    if (!startTime) {
+      addFieldError(
+        "additionalRequests.venue.startTime",
+        "Start time is required when Venue module is selected"
+      );
+    } else if (!STRICT_HHMM_REGEX.test(startTime)) {
+      addFieldError(
+        "additionalRequests.venue.startTime",
+        "Start time must be in 24-hour HH:mm format"
+      );
+    }
+
+    if (!endTime) {
+      addFieldError(
+        "additionalRequests.venue.endTime",
+        "End time is required when Venue module is selected"
+      );
+    } else if (!STRICT_HHMM_REGEX.test(endTime)) {
+      addFieldError(
+        "additionalRequests.venue.endTime",
+        "End time must be in 24-hour HH:mm format"
+      );
+    }
+
+    const startMinutes = parseStrictTimeToMinutes(startTime);
+    const endMinutes = parseStrictTimeToMinutes(endTime);
+    if (startMinutes !== null && endMinutes !== null && endMinutes <= startMinutes) {
+      addFieldError(
+        "additionalRequests.venue.endTime",
+        "End time must be greater than start time"
+      );
+    }
+
+    const startDate = parseDateOnlyValue(eventDate);
+    const finalEndDate = parseDateOnlyValue(endDate || eventDate);
+
+    if (
+      selectedVenue ||
+      customVenue ||
+      startMinutes !== null ||
+      endMinutes !== null
+    ) {
+      if (!startDate || !finalEndDate) {
+        addFieldError(
+          "eventDate",
+          "Valid event dates are required for venue conflict validation"
+        );
+      }
+    }
+
+    if (
+      Object.keys(fieldErrors).length === 0 &&
+      (selectedVenue || customVenue) &&
+      startMinutes !== null &&
+      endMinutes !== null &&
+      endMinutes > startMinutes &&
+      startDate &&
+      finalEndDate
+    ) {
+      const resolvedVenueName = selectedVenue || customVenue;
+      venueBooking = {
+        venueName: resolvedVenueName,
+        normalizedVenue: normalizeVenueLabel(resolvedVenueName),
+        startDate,
+        endDate: finalEndDate,
+        startMinutes,
+        endMinutes,
+        startTime: formatMinutesToHHMM(startMinutes),
+        endTime: formatMinutesToHHMM(endMinutes),
+      };
+    }
+  }
+
+  if (asBoolean(additionalRequests.catering.enabled)) {
+    const rawCount = normalizeSingleStringField(
+      additionalRequests.catering.approximateCount
+    );
+    const description = normalizeSingleStringField(additionalRequests.catering.description);
+
+    if (!rawCount) {
+      addFieldError(
+        "additionalRequests.catering.approximateCount",
+        "Approximate count is required for Catering"
+      );
+    } else {
+      const numericCount = Number(rawCount);
+      if (!Number.isFinite(numericCount) || numericCount <= 0) {
+        addFieldError(
+          "additionalRequests.catering.approximateCount",
+          "Approximate count must be a positive number"
+        );
+      }
+    }
+
+    if (!description) {
+      addFieldError(
+        "additionalRequests.catering.description",
+        "Catering description is required"
+      );
+    }
+  }
+
+  if (asBoolean(additionalRequests.stalls.enabled)) {
+    const canopySelected = asBoolean(additionalRequests.stalls.canopySelected);
+    const hardboardSelected = asBoolean(additionalRequests.stalls.hardboardSelected);
+
+    if (!canopySelected && !hardboardSelected) {
+      addFieldError(
+        "additionalRequests.stalls.canopySelected",
+        "Select at least one stall type"
+      );
+    }
+
+    let hasPositiveQuantity = false;
+    const validateQuantity = (selected, rawValue, fieldPath) => {
+      if (!selected) return;
+
+      const normalized = normalizeSingleStringField(rawValue);
+      if (!normalized) {
+        addFieldError(fieldPath, "Quantity is required for selected stall type");
+        return;
+      }
+
+      const numeric = Number(normalized);
+      if (!Number.isFinite(numeric)) {
+        addFieldError(fieldPath, "Quantity must be a valid number");
+        return;
+      }
+
+      if (numeric < 0) {
+        addFieldError(fieldPath, "Quantity cannot be negative");
+        return;
+      }
+
+      if (numeric > 0) {
+        hasPositiveQuantity = true;
+      }
+    };
+
+    validateQuantity(
+      canopySelected,
+      additionalRequests.stalls.canopyQuantity,
+      "additionalRequests.stalls.canopyQuantity"
+    );
+    validateQuantity(
+      hardboardSelected,
+      additionalRequests.stalls.hardboardQuantity,
+      "additionalRequests.stalls.hardboardQuantity"
+    );
+
+    if ((canopySelected || hardboardSelected) && !hasPositiveQuantity) {
+      addFieldError(
+        "additionalRequests.stalls.canopyQuantity",
+        "At least one selected stall type must have quantity greater than 0"
+      );
+    }
+  }
+
+  if (asBoolean(additionalRequests.security.enabled)) {
+    if (!normalizeSingleStringField(additionalRequests.security.description)) {
+      addFieldError(
+        "additionalRequests.security.description",
+        "Security description is required when Security module is selected"
+      );
+    }
+  }
+
+  return {
+    fieldErrors,
+    additionalRequests,
+    venueBooking,
+  };
+};
+
+const findVenueConflict = async ({ venueBooking, ignoreEventId }) => {
+  if (!venueBooking) return null;
+
+  const candidateEvents = await queryAll("events", {
+    select: "event_id,event_date,end_date,event_time,venue,additional_requests",
+  });
+
+  for (const candidate of candidateEvents || []) {
+    if (!candidate?.event_id) continue;
+    if (ignoreEventId && candidate.event_id === ignoreEventId) continue;
+
+    const existingBooking = buildVenueBookingWindowFromEvent(candidate);
+    if (!existingBooking) continue;
+
+    if (existingBooking.normalizedVenue !== venueBooking.normalizedVenue) continue;
+
+    if (
+      !rangesOverlap(
+        venueBooking.startDate,
+        venueBooking.endDate,
+        existingBooking.startDate,
+        existingBooking.endDate
+      )
+    ) {
+      continue;
+    }
+
+    const hasTimeOverlap =
+      venueBooking.startMinutes < existingBooking.endMinutes &&
+      venueBooking.endMinutes > existingBooking.startMinutes;
+
+    if (!hasTimeOverlap) continue;
+
+    return existingBooking;
+  }
+
+  return null;
+};
 
 const normalizeEmailAddress = (value) => String(value || "").trim().toLowerCase();
 const isValidEmailAddress = (value) => ORGANIZER_EMAIL_REGEX.test(normalizeEmailAddress(value));
@@ -341,6 +821,7 @@ router.get("/", optionalAuth, checkRoleExpiration, async (req, res) => {
         schedule: normalizeJsonField(event.schedule),
         prizes: normalizeJsonField(event.prizes),
         custom_fields: normalizeJsonField(event.custom_fields),
+        additional_requests: sanitizeAdditionalRequests(event.additional_requests),
         campus_hosted_at: normalizeSingleStringField(event.campus_hosted_at),
         allowed_campuses: normalizeStringListField(event.allowed_campuses),
         registration_count: eventRegistrationCounts[event.event_id] || 0,
@@ -482,6 +963,7 @@ router.get("/:eventId", async (req, res) => {
       schedule: normalizeJsonField(event.schedule),
       prizes: normalizeJsonField(event.prizes),
       custom_fields: normalizeJsonField(event.custom_fields),
+      additional_requests: sanitizeAdditionalRequests(event.additional_requests),
       campus_hosted_at: normalizeSingleStringField(event.campus_hosted_at),
       allowed_campuses: normalizeStringListField(event.allowed_campuses),
       ...archiveState,
@@ -669,12 +1151,52 @@ router.post(
       const parsedSchedule = parseJsonField(schedule, []);
       const parsedPrizes = parseJsonField(prizes, []);
       const parsedCustomFields = parseJsonField(req.body.custom_fields, []);
+      const normalizedFestReference = normalizeFestReference(fest_id ?? fest);
       const campusHostedAt = normalizeSingleStringField(
         req.body.campus_hosted_at || req.body.campusHostedAt || ""
       );
       const parsedAllowedCampuses = normalizeStringListField(
         req.body.allowed_campuses
       );
+      const additionalRequestsValidation = validateAdditionalRequestsPayload({
+        additionalRequestsRaw: req.body.additional_requests,
+        hasFestSelected: Boolean(normalizedFestReference),
+        eventDate: event_date || null,
+        endDate: req.body.end_date || event_date || null,
+      });
+
+      if (Object.keys(additionalRequestsValidation.fieldErrors).length > 0) {
+        return res.status(400).json({
+          error: "Additional request validation failed.",
+          fieldErrors: additionalRequestsValidation.fieldErrors,
+        });
+      }
+
+      if (additionalRequestsValidation.venueBooking) {
+        const conflict = await findVenueConflict({
+          venueBooking: additionalRequestsValidation.venueBooking,
+          ignoreEventId: null,
+        });
+
+        if (conflict) {
+          const conflictMessage = `This venue is already booked from ${conflict.startTime} to ${conflict.endTime}. Please choose a different time slot or venue.`;
+          return res.status(409).json({
+            error: conflictMessage,
+            code: "VENUE_TIME_CONFLICT",
+            fieldErrors: {
+              "additionalRequests.venue.selectedVenue": conflictMessage,
+              "additionalRequests.venue.customVenue": conflictMessage,
+              "additionalRequests.venue.startTime": conflictMessage,
+              "additionalRequests.venue.endTime": conflictMessage,
+            },
+            conflict: {
+              event_id: conflict.eventId,
+              start_time: conflict.startTime,
+              end_time: conflict.endTime,
+            },
+          });
+        }
+      }
 
       if (!campusHostedAt) {
         return res.status(400).json({
@@ -722,7 +1244,7 @@ router.post(
         organizer_phone: req.body.organizer_phone || null,
         whatsapp_invite_link: req.body.whatsapp_invite_link || null,
         organizing_dept: organizing_dept || null,
-        fest_id: normalizeFestReference(fest_id ?? fest),
+        fest_id: normalizedFestReference,
         created_by: req.userInfo?.email,
         auth_uuid: req.userId,
         registration_deadline: req.body.registration_deadline || null,
@@ -741,6 +1263,7 @@ router.post(
         campus_hosted_at: campusHostedAt,
         allowed_campuses: parsedAllowedCampuses,
         min_participants: parseOptionalInt(req.body.min_participants || req.body.minParticipants, 1),
+        additional_requests: additionalRequestsValidation.additionalRequests,
       }]);
 
       if (!created || created.length === 0) {
@@ -1142,12 +1665,57 @@ router.put(
       const parsedSchedule = parseJsonField(schedule, []);
       const parsedPrizes = parseJsonField(prizes, []);
       const parsedCustomFields = parseJsonField(req.body.custom_fields, []);
+      const normalizedFestReference = normalizeFestReference(fest_id ?? fest);
       const campusHostedAt = normalizeSingleStringField(
         req.body.campus_hosted_at || req.body.campusHostedAt || ""
       );
       const parsedAllowedCampuses = normalizeStringListField(
         req.body.allowed_campuses
       );
+      const additionalRequestsValidation = validateAdditionalRequestsPayload({
+        additionalRequestsRaw: req.body.additional_requests,
+        hasFestSelected: Boolean(normalizedFestReference),
+        eventDate: event_date || event?.event_date || null,
+        endDate:
+          req.body.end_date ||
+          event?.end_date ||
+          event_date ||
+          event?.event_date ||
+          null,
+      });
+
+      if (Object.keys(additionalRequestsValidation.fieldErrors).length > 0) {
+        return res.status(400).json({
+          error: "Additional request validation failed.",
+          fieldErrors: additionalRequestsValidation.fieldErrors,
+        });
+      }
+
+      if (additionalRequestsValidation.venueBooking) {
+        const conflict = await findVenueConflict({
+          venueBooking: additionalRequestsValidation.venueBooking,
+          ignoreEventId: eventId,
+        });
+
+        if (conflict) {
+          const conflictMessage = `This venue is already booked from ${conflict.startTime} to ${conflict.endTime}. Please choose a different time slot or venue.`;
+          return res.status(409).json({
+            error: conflictMessage,
+            code: "VENUE_TIME_CONFLICT",
+            fieldErrors: {
+              "additionalRequests.venue.selectedVenue": conflictMessage,
+              "additionalRequests.venue.customVenue": conflictMessage,
+              "additionalRequests.venue.startTime": conflictMessage,
+              "additionalRequests.venue.endTime": conflictMessage,
+            },
+            conflict: {
+              event_id: conflict.eventId,
+              start_time: conflict.startTime,
+              end_time: conflict.endTime,
+            },
+          });
+        }
+      }
 
       if (!campusHostedAt) {
         return res.status(400).json({
@@ -1209,7 +1777,7 @@ router.put(
         organizer_phone: req.body.organizer_phone || null,
         whatsapp_invite_link: req.body.whatsapp_invite_link || null,
         organizing_dept: organizing_dept || null,
-        fest_id: normalizeFestReference(fest_id ?? fest),
+        fest_id: normalizedFestReference,
         registration_deadline: req.body.registration_deadline || null,
         // Preserve existing total_participants unless there is a specific admin action to modify it.
         // Include outsider-related settings so toggles persist from the client.
@@ -1220,6 +1788,7 @@ router.put(
         campus_hosted_at: campusHostedAt,
         allowed_campuses: parsedAllowedCampuses,
         min_participants: parseOptionalInt(req.body.min_participants || req.body.minParticipants, 1),
+        additional_requests: additionalRequestsValidation.additionalRequests,
         updated_at: new Date().toISOString(),
         ...archiveOverridePayload,
         ...draftOverridePayload

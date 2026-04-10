@@ -10,6 +10,47 @@ const ACCEPTED_IMAGE_TYPES = [
   "image/gif",
 ];
 const ACCEPTED_PDF_TYPES = ["application/pdf"];
+const STRICT_HHMM_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+export const predefinedVenues = [
+  "Main Audi",
+  "Audi Block",
+  "Central Auditorium",
+  "Mini Auditorium",
+  "Seminar Hall",
+];
+
+export const additionalRequestsDefaultValues = {
+  it: {
+    enabled: false,
+    description: "",
+  },
+  venue: {
+    enabled: false,
+    selectedVenue: "",
+    customVenue: "",
+    startTime: "",
+    endTime: "",
+  },
+  catering: {
+    enabled: false,
+    approximateCount: "",
+    description: "",
+  },
+  stalls: {
+    enabled: false,
+    canopySelected: false,
+    canopyQuantity: "0",
+    canopyDescription: "",
+    hardboardSelected: false,
+    hardboardQuantity: "0",
+    hardboardDescription: "",
+  },
+  security: {
+    enabled: false,
+    description: "",
+  },
+};
 
 const fileSchema = (
   maxSize: number,
@@ -67,6 +108,48 @@ export const customFieldSchema = z.object({
   required: z.boolean(),
   placeholder: z.string().optional(),
   options: z.array(z.string()).optional(),
+});
+
+export const additionalRequestsSchema = z.object({
+  it: z
+    .object({
+      enabled: z.boolean().default(false),
+      description: z.string().optional().or(z.literal("")),
+    })
+    .default(additionalRequestsDefaultValues.it),
+  venue: z
+    .object({
+      enabled: z.boolean().default(false),
+      selectedVenue: z.string().optional().or(z.literal("")),
+      customVenue: z.string().optional().or(z.literal("")),
+      startTime: z.string().optional().or(z.literal("")),
+      endTime: z.string().optional().or(z.literal("")),
+    })
+    .default(additionalRequestsDefaultValues.venue),
+  catering: z
+    .object({
+      enabled: z.boolean().default(false),
+      approximateCount: z.string().optional().or(z.literal("")),
+      description: z.string().optional().or(z.literal("")),
+    })
+    .default(additionalRequestsDefaultValues.catering),
+  stalls: z
+    .object({
+      enabled: z.boolean().default(false),
+      canopySelected: z.boolean().default(false),
+      canopyQuantity: z.string().optional().or(z.literal("")),
+      canopyDescription: z.string().optional().or(z.literal("")),
+      hardboardSelected: z.boolean().default(false),
+      hardboardQuantity: z.string().optional().or(z.literal("")),
+      hardboardDescription: z.string().optional().or(z.literal("")),
+    })
+    .default(additionalRequestsDefaultValues.stalls),
+  security: z
+    .object({
+      enabled: z.boolean().default(false),
+      description: z.string().optional().or(z.literal("")),
+    })
+    .default(additionalRequestsDefaultValues.security),
 });
 
 export const eventFormSchema = z
@@ -194,6 +277,9 @@ export const eventFormSchema = z
     scheduleItems: z.array(scheduleItemSchema).optional(),
     eventHeads: z.array(z.string().email("Invalid email format")).optional(),
     customFields: z.array(customFieldSchema).optional(),
+    additionalRequests: additionalRequestsSchema.default(
+      additionalRequestsDefaultValues
+    ),
   })
   .refine(
     (data) => {
@@ -250,12 +336,227 @@ export const eventFormSchema = z
       message: "Registration deadline cannot be after the event end date",
       path: ["registrationDeadline"],
     }
-  );
+  )
+  .superRefine((data, ctx) => {
+    const hasFestSelected =
+      typeof data.festEvent === "string" &&
+      data.festEvent.trim() !== "" &&
+      data.festEvent.trim().toLowerCase() !== "none";
+
+    if (!hasFestSelected) {
+      return;
+    }
+
+    const requests = data.additionalRequests || additionalRequestsDefaultValues;
+
+    const parseStrictTimeToMinutes = (timeValue: string): number | null => {
+      if (!STRICT_HHMM_REGEX.test(timeValue)) return null;
+      const [hours, minutes] = timeValue.split(":").map(Number);
+      return hours * 60 + minutes;
+    };
+
+    if (requests.it?.enabled) {
+      const description = String(requests.it.description || "").trim();
+      if (!description) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["additionalRequests", "it", "description"],
+          message: "IT description is required when IT module is selected",
+        });
+      }
+    }
+
+    if (requests.venue?.enabled) {
+      const selectedVenue = String(requests.venue.selectedVenue || "").trim();
+      const customVenue = String(requests.venue.customVenue || "").trim();
+      const startTime = String(requests.venue.startTime || "").trim();
+      const endTime = String(requests.venue.endTime || "").trim();
+
+      if (!selectedVenue && !customVenue) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["additionalRequests", "venue", "selectedVenue"],
+          message:
+            "Select a predefined venue or enter a custom venue",
+        });
+      }
+
+      if (selectedVenue && customVenue) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["additionalRequests", "venue", "customVenue"],
+          message: "Choose either predefined venue or custom venue, not both",
+        });
+      }
+
+      if (!startTime) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["additionalRequests", "venue", "startTime"],
+          message: "Start time is required when Venue module is selected",
+        });
+      } else if (!STRICT_HHMM_REGEX.test(startTime)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["additionalRequests", "venue", "startTime"],
+          message: "Start time must be in 24-hour HH:mm format",
+        });
+      }
+
+      if (!endTime) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["additionalRequests", "venue", "endTime"],
+          message: "End time is required when Venue module is selected",
+        });
+      } else if (!STRICT_HHMM_REGEX.test(endTime)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["additionalRequests", "venue", "endTime"],
+          message: "End time must be in 24-hour HH:mm format",
+        });
+      }
+
+      const startMinutes = parseStrictTimeToMinutes(startTime);
+      const endMinutes = parseStrictTimeToMinutes(endTime);
+
+      if (
+        startMinutes !== null &&
+        endMinutes !== null &&
+        endMinutes <= startMinutes
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["additionalRequests", "venue", "endTime"],
+          message: "End time must be greater than start time",
+        });
+      }
+    }
+
+    if (requests.catering?.enabled) {
+      const rawCount = String(requests.catering.approximateCount || "").trim();
+      const description = String(requests.catering.description || "").trim();
+
+      if (!rawCount) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["additionalRequests", "catering", "approximateCount"],
+          message: "Approximate count is required for Catering",
+        });
+      } else {
+        const numericCount = Number(rawCount);
+        if (!Number.isFinite(numericCount) || numericCount <= 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["additionalRequests", "catering", "approximateCount"],
+            message: "Approximate count must be a positive number",
+          });
+        }
+      }
+
+      if (!description) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["additionalRequests", "catering", "description"],
+          message: "Catering description is required",
+        });
+      }
+    }
+
+    if (requests.stalls?.enabled) {
+      const canopySelected = Boolean(requests.stalls.canopySelected);
+      const hardboardSelected = Boolean(requests.stalls.hardboardSelected);
+
+      if (!canopySelected && !hardboardSelected) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["additionalRequests", "stalls", "canopySelected"],
+          message: "Select at least one stall type",
+        });
+      }
+
+      let hasPositiveQuantity = false;
+
+      const validateStallQuantity = (
+        selected: boolean,
+        rawValue: string,
+        fieldName: "canopyQuantity" | "hardboardQuantity"
+      ) => {
+        if (!selected) return;
+
+        const normalized = String(rawValue || "").trim();
+        if (!normalized) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["additionalRequests", "stalls", fieldName],
+            message: "Quantity is required for selected stall type",
+          });
+          return;
+        }
+
+        const numericQuantity = Number(normalized);
+        if (!Number.isFinite(numericQuantity)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["additionalRequests", "stalls", fieldName],
+            message: "Quantity must be a valid number",
+          });
+          return;
+        }
+
+        if (numericQuantity < 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["additionalRequests", "stalls", fieldName],
+            message: "Quantity cannot be negative",
+          });
+          return;
+        }
+
+        if (numericQuantity > 0) {
+          hasPositiveQuantity = true;
+        }
+      };
+
+      validateStallQuantity(
+        canopySelected,
+        requests.stalls.canopyQuantity || "",
+        "canopyQuantity"
+      );
+      validateStallQuantity(
+        hardboardSelected,
+        requests.stalls.hardboardQuantity || "",
+        "hardboardQuantity"
+      );
+
+      if ((canopySelected || hardboardSelected) && !hasPositiveQuantity) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["additionalRequests", "stalls", "canopyQuantity"],
+          message:
+            "At least one selected stall type must have quantity greater than 0",
+        });
+      }
+    }
+
+    if (requests.security?.enabled) {
+      const description = String(requests.security.description || "").trim();
+      if (!description) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["additionalRequests", "security", "description"],
+          message:
+            "Security description is required when Security module is selected",
+        });
+      }
+    }
+  });
 
 // TypeScript type inferred from schema
 // Note: imageFile, bannerFile, and pdfFile are FileList | null (browser native type)
 export type EventFormData = z.infer<typeof eventFormSchema>;
 export type ScheduleItem = z.infer<typeof scheduleItemSchema>;
+export type AdditionalRequestsData = z.infer<typeof additionalRequestsSchema>;
 
 export const departments = [
   {

@@ -21,6 +21,8 @@ import {
   categories as categoryOptions,
   festEvents as festEventOptions,
   christCampuses,
+  additionalRequestsDefaultValues,
+  predefinedVenues,
 } from "@/app/lib/eventFormSchema";
 
 import { getFests } from "@/lib/api";
@@ -883,6 +885,57 @@ const normalizeFestOptionLabel = (fest: any): string => {
   return normalized || "Untitled Fest";
 };
 
+const getAdditionalRequestsDefaults = (): EventFormData["additionalRequests"] => ({
+  it: {
+    ...additionalRequestsDefaultValues.it,
+  },
+  venue: {
+    ...additionalRequestsDefaultValues.venue,
+  },
+  catering: {
+    ...additionalRequestsDefaultValues.catering,
+  },
+  stalls: {
+    ...additionalRequestsDefaultValues.stalls,
+  },
+  security: {
+    ...additionalRequestsDefaultValues.security,
+  },
+});
+
+const mergeAdditionalRequests = (
+  value: unknown
+): EventFormData["additionalRequests"] => {
+  const base = getAdditionalRequestsDefaults();
+  if (!value || typeof value !== "object") {
+    return base;
+  }
+
+  const source = value as Partial<EventFormData["additionalRequests"]>;
+  return {
+    it: {
+      ...base.it,
+      ...(source.it || {}),
+    },
+    venue: {
+      ...base.venue,
+      ...(source.venue || {}),
+    },
+    catering: {
+      ...base.catering,
+      ...(source.catering || {}),
+    },
+    stalls: {
+      ...base.stalls,
+      ...(source.stalls || {}),
+    },
+    security: {
+      ...base.security,
+      ...(source.security || {}),
+    },
+  };
+};
+
 const EVENT_ERROR_SCROLL_ORDER: string[] = [
   "eventTitle",
   "eventDate",
@@ -890,6 +943,7 @@ const EVENT_ERROR_SCROLL_ORDER: string[] = [
   "registrationDeadline",
   "eventTime",
   "festEvent",
+  "additionalRequests",
   "isTeamEvent",
   "minParticipants",
   "maxParticipants",
@@ -923,6 +977,7 @@ const EVENT_ERROR_SELECTOR_MAP: Record<string, string> = {
   registrationDeadline: "#registrationDeadline",
   eventTime: "#eventTime",
   festEvent: "#festEvent",
+  additionalRequests: "#additionalRequests-section",
   isTeamEvent: "#isTeamEvent",
   minParticipants: "#minParticipants",
   maxParticipants: "#maxParticipants",
@@ -1037,6 +1092,8 @@ export default function EventForm({
     control,
     formState: { errors, isSubmitting: rhfIsSubmitting },
     setValue,
+    setError,
+    clearErrors,
     watch,
     reset,
     trigger,
@@ -1074,6 +1131,7 @@ export default function EventForm({
       outsiderMaxParticipants: "",
       campusHostedAt: "",
       allowedCampuses: [],
+      additionalRequests: getAdditionalRequestsDefaults(),
       imageFile: null,
       bannerFile: null,
       pdfFile: null,
@@ -1236,6 +1294,7 @@ export default function EventForm({
           : [],
         campusHostedAt: normalizeCampusHostedAt(defaultValues.campusHostedAt),
         allowedCampuses: normalizeAllowedCampuses(defaultValues.allowedCampuses),
+        additionalRequests: mergeAdditionalRequests(defaultValues.additionalRequests),
       };
       reset(transformedDefaults);
     }
@@ -1247,7 +1306,56 @@ export default function EventForm({
   const watchedMaxParticipants = useWatch({ control, name: "maxParticipants" });
   const watchedMinParticipants = useWatch({ control, name: "minParticipants" });
   const watchedFestEvent = useWatch({ control, name: "festEvent" });
+  const watchedItEnabled = useWatch({
+    control,
+    name: "additionalRequests.it.enabled",
+  });
+  const watchedVenueEnabled = useWatch({
+    control,
+    name: "additionalRequests.venue.enabled",
+  });
+  const watchedVenueSelected = useWatch({
+    control,
+    name: "additionalRequests.venue.selectedVenue",
+  });
+  const watchedVenueCustom = useWatch({
+    control,
+    name: "additionalRequests.venue.customVenue",
+  });
+  const watchedCateringEnabled = useWatch({
+    control,
+    name: "additionalRequests.catering.enabled",
+  });
+  const watchedStallsEnabled = useWatch({
+    control,
+    name: "additionalRequests.stalls.enabled",
+  });
+  const watchedCanopySelected = useWatch({
+    control,
+    name: "additionalRequests.stalls.canopySelected",
+  });
+  const watchedHardboardSelected = useWatch({
+    control,
+    name: "additionalRequests.stalls.hardboardSelected",
+  });
+  const watchedSecurityEnabled = useWatch({
+    control,
+    name: "additionalRequests.security.enabled",
+  });
+
+  const hasFestSelected =
+    typeof watchedFestEvent === "string" &&
+    watchedFestEvent.trim() !== "" &&
+    watchedFestEvent.trim().toLowerCase() !== "none";
   const lastAutoFilledFestRef = useRef<string | null>(null);
+  const prevHasFestSelectedRef = useRef(hasFestSelected);
+  const prevItEnabledRef = useRef(Boolean(watchedItEnabled));
+  const prevVenueEnabledRef = useRef(Boolean(watchedVenueEnabled));
+  const prevCateringEnabledRef = useRef(Boolean(watchedCateringEnabled));
+  const prevStallsEnabledRef = useRef(Boolean(watchedStallsEnabled));
+  const prevCanopySelectedRef = useRef(Boolean(watchedCanopySelected));
+  const prevHardboardSelectedRef = useRef(Boolean(watchedHardboardSelected));
+  const prevSecurityEnabledRef = useRef(Boolean(watchedSecurityEnabled));
 
   useEffect(() => {
     if (!watchedIsTeamEvent) {
@@ -1340,12 +1448,189 @@ export default function EventForm({
     }
   }, [watchedFestEvent, fetchedFests, setValue]);
 
+  useEffect(() => {
+    const wasFestSelected = prevHasFestSelectedRef.current;
+    prevHasFestSelectedRef.current = hasFestSelected;
+
+    if (wasFestSelected && !hasFestSelected) {
+      setValue("additionalRequests", getAdditionalRequestsDefaults(), {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    }
+  }, [hasFestSelected, setValue]);
+
+  useEffect(() => {
+    const wasEnabled = prevItEnabledRef.current;
+    const isEnabled = Boolean(watchedItEnabled);
+    prevItEnabledRef.current = isEnabled;
+
+    if (wasEnabled && !isEnabled) {
+      setValue("additionalRequests.it.description", "", {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    }
+  }, [watchedItEnabled, setValue]);
+
+  useEffect(() => {
+    const wasEnabled = prevVenueEnabledRef.current;
+    const isEnabled = Boolean(watchedVenueEnabled);
+    prevVenueEnabledRef.current = isEnabled;
+
+    if (wasEnabled && !isEnabled) {
+      setValue("additionalRequests.venue.selectedVenue", "", {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      setValue("additionalRequests.venue.customVenue", "", {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      setValue("additionalRequests.venue.startTime", "", {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      setValue("additionalRequests.venue.endTime", "", {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    }
+  }, [watchedVenueEnabled, setValue]);
+
+  useEffect(() => {
+    if (!watchedVenueEnabled) return;
+    if (!watchedVenueSelected || !String(watchedVenueSelected).trim()) return;
+    if (!watchedVenueCustom || !String(watchedVenueCustom).trim()) return;
+
+    setValue("additionalRequests.venue.customVenue", "", {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+  }, [watchedVenueEnabled, watchedVenueSelected, watchedVenueCustom, setValue]);
+
+  useEffect(() => {
+    const wasEnabled = prevCateringEnabledRef.current;
+    const isEnabled = Boolean(watchedCateringEnabled);
+    prevCateringEnabledRef.current = isEnabled;
+
+    if (wasEnabled && !isEnabled) {
+      setValue("additionalRequests.catering.approximateCount", "", {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      setValue("additionalRequests.catering.description", "", {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    }
+  }, [watchedCateringEnabled, setValue]);
+
+  useEffect(() => {
+    const wasEnabled = prevStallsEnabledRef.current;
+    const isEnabled = Boolean(watchedStallsEnabled);
+    prevStallsEnabledRef.current = isEnabled;
+
+    if (wasEnabled && !isEnabled) {
+      setValue("additionalRequests.stalls", getAdditionalRequestsDefaults().stalls, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    }
+  }, [watchedStallsEnabled, setValue]);
+
+  useEffect(() => {
+    const wasSelected = prevCanopySelectedRef.current;
+    const isSelected = Boolean(watchedCanopySelected);
+    prevCanopySelectedRef.current = isSelected;
+
+    if (!watchedStallsEnabled) return;
+    if (wasSelected && !isSelected) {
+      setValue("additionalRequests.stalls.canopyQuantity", "0", {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      setValue("additionalRequests.stalls.canopyDescription", "", {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    }
+  }, [watchedStallsEnabled, watchedCanopySelected, setValue]);
+
+  useEffect(() => {
+    const wasSelected = prevHardboardSelectedRef.current;
+    const isSelected = Boolean(watchedHardboardSelected);
+    prevHardboardSelectedRef.current = isSelected;
+
+    if (!watchedStallsEnabled) return;
+    if (wasSelected && !isSelected) {
+      setValue("additionalRequests.stalls.hardboardQuantity", "0", {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      setValue("additionalRequests.stalls.hardboardDescription", "", {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    }
+  }, [watchedStallsEnabled, watchedHardboardSelected, setValue]);
+
+  useEffect(() => {
+    const wasEnabled = prevSecurityEnabledRef.current;
+    const isEnabled = Boolean(watchedSecurityEnabled);
+    prevSecurityEnabledRef.current = isEnabled;
+
+    if (wasEnabled && !isEnabled) {
+      setValue("additionalRequests.security.description", "", {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    }
+  }, [watchedSecurityEnabled, setValue]);
+
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [isNavigating, setIsNavigating] = React.useState(false);
   const [pendingSuccess, setPendingSuccess] = React.useState<"publish" | "draft" | "delete" | null>(null);
   const [successAction, setSuccessAction] = React.useState<"publish" | "draft">("publish");
   const [wasDraftOnSubmit, setWasDraftOnSubmit] = React.useState(false);
   const [modalVisible, setModalVisible] = React.useState(false);
+
+  const applyServerFieldErrors = React.useCallback(
+    (incoming: unknown) => {
+      if (!incoming || typeof incoming !== "object") return;
+
+      const fieldErrors = incoming as Record<string, unknown>;
+      const entries = Object.entries(fieldErrors).filter(
+        ([path, message]) =>
+          typeof path === "string" &&
+          path.trim().length > 0 &&
+          typeof message === "string" &&
+          message.trim().length > 0
+      );
+
+      if (entries.length === 0) return;
+
+      clearErrors();
+      entries.forEach(([path, message]) => {
+        setError(path as any, {
+          type: "server",
+          message,
+        });
+      });
+
+      const firstPath = entries[0][0];
+      const firstElement = document.getElementById(firstPath);
+      if (firstElement) {
+        firstElement.scrollIntoView({ behavior: "smooth", block: "center" });
+        window.setTimeout(() => {
+          if ("focus" in firstElement && typeof firstElement.focus === "function") {
+            firstElement.focus();
+          }
+        }, 120);
+      }
+    },
+    [clearErrors, setError]
+  );
 
   const processSubmit: SubmitHandler<EventFormData> = async (data) => {
     try {
@@ -1355,6 +1640,7 @@ export default function EventForm({
       // Don't show modal yet — let the overlay finish its animation first
       setPendingSuccess("publish");
     } catch (error: any) {
+      applyServerFieldErrors(error?.fieldErrors);
       console.error(
         "EventForm: Error from onSubmit prop:",
         error.message,
@@ -1371,6 +1657,7 @@ export default function EventForm({
       setSuccessAction("draft");
       setPendingSuccess("draft");
     } catch (error: any) {
+      applyServerFieldErrors(error?.fieldErrors);
       console.error(
         "EventForm: Error from onSubmitDraft prop:",
         error.message,
@@ -1928,6 +2215,484 @@ export default function EventForm({
                     error={errors.festEvent}
                   />
                 </div>
+
+                {hasFestSelected && (
+                  <div
+                    id="additionalRequests-section"
+                    className="bg-gray-50 border border-gray-200 rounded-2xl p-5 sm:p-6 space-y-5"
+                  >
+                    <div>
+                      <h3 className="text-base font-bold text-[#063168]">
+                        Additional Requests
+                      </h3>
+                      <p className="text-xs text-gray-600 mt-1">
+                        Optional modules for fest-linked events. Selected modules
+                        must be completed before submission.
+                      </p>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="bg-white border border-gray-200 rounded-xl p-4">
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <label
+                              htmlFor="additionalRequests-it-enabled"
+                              className="text-sm font-semibold text-gray-900"
+                            >
+                              IT
+                            </label>
+                            <p className="text-xs text-gray-500 mt-1">
+                              Request IT support for equipment and infra.
+                            </p>
+                          </div>
+                          <Controller
+                            name="additionalRequests.it.enabled"
+                            control={control}
+                            render={({ field }) => (
+                              <label className="relative inline-flex items-center cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  id="additionalRequests-it-enabled"
+                                  checked={!!field.value}
+                                  onChange={(e) => field.onChange(e.target.checked)}
+                                  className="sr-only peer"
+                                />
+                                <div className={toggleTrackClass}></div>
+                              </label>
+                            )}
+                          />
+                        </div>
+
+                        {watchedItEnabled && (
+                          <div className="mt-4">
+                            <InputField
+                              label="Description:"
+                              name={"additionalRequests.it.description" as any}
+                              as="textarea"
+                              rows={3}
+                              register={register}
+                              error={
+                                errors.additionalRequests?.it
+                                  ?.description as FieldError | undefined
+                              }
+                              required
+                              placeholder="Any specific services like junction box, extension, projector, etc."
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="bg-white border border-gray-200 rounded-xl p-4">
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <label
+                              htmlFor="additionalRequests-venue-enabled"
+                              className="text-sm font-semibold text-gray-900"
+                            >
+                              Venue
+                            </label>
+                            <p className="text-xs text-gray-500 mt-1">
+                              Choose either a predefined venue or provide a
+                              custom venue with slot timing.
+                            </p>
+                          </div>
+                          <Controller
+                            name="additionalRequests.venue.enabled"
+                            control={control}
+                            render={({ field }) => (
+                              <label className="relative inline-flex items-center cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  id="additionalRequests-venue-enabled"
+                                  checked={!!field.value}
+                                  onChange={(e) => field.onChange(e.target.checked)}
+                                  className="sr-only peer"
+                                />
+                                <div className={toggleTrackClass}></div>
+                              </label>
+                            )}
+                          />
+                        </div>
+
+                        {watchedVenueEnabled && (
+                          <div className="mt-4 space-y-4">
+                            <div>
+                              <label
+                                htmlFor="additionalRequests.venue.selectedVenue"
+                                className="block mb-2 text-sm font-medium text-gray-700"
+                              >
+                                Predefined venue
+                              </label>
+                              <Controller
+                                name="additionalRequests.venue.selectedVenue"
+                                control={control}
+                                render={({ field }) => (
+                                  <select
+                                    id="additionalRequests.venue.selectedVenue"
+                                    value={field.value || ""}
+                                    onChange={(e) => {
+                                      const selectedValue = e.target.value;
+                                      field.onChange(selectedValue);
+                                      if (selectedValue) {
+                                        setValue(
+                                          "additionalRequests.venue.customVenue",
+                                          "",
+                                          {
+                                            shouldDirty: true,
+                                            shouldValidate: true,
+                                          }
+                                        );
+                                      }
+                                    }}
+                                    className={`w-full px-3 py-2 sm:px-4 sm:py-3 rounded-lg border text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-[#154CB3] focus:border-transparent transition-all ${
+                                      errors.additionalRequests?.venue
+                                        ?.selectedVenue
+                                        ? "border-red-500"
+                                        : "border-gray-300"
+                                    }`}
+                                  >
+                                    <option value="">Select a predefined venue</option>
+                                    {predefinedVenues.map((venueOption) => (
+                                      <option
+                                        key={venueOption}
+                                        value={venueOption}
+                                      >
+                                        {venueOption}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
+                              />
+                              {errors.additionalRequests?.venue?.selectedVenue && (
+                                <p className="text-red-500 text-xs mt-1">
+                                  {
+                                    errors.additionalRequests.venue.selectedVenue
+                                      .message as string
+                                  }
+                                </p>
+                              )}
+                            </div>
+
+                            <InputField
+                              label="Custom venue"
+                              name={"additionalRequests.venue.customVenue" as any}
+                              register={register}
+                              registerOptions={{
+                                onChange: (event) => {
+                                  const nextValue = String(
+                                    event?.target?.value || ""
+                                  ).trim();
+                                  if (nextValue) {
+                                    setValue(
+                                      "additionalRequests.venue.selectedVenue",
+                                      "",
+                                      {
+                                        shouldDirty: true,
+                                        shouldValidate: true,
+                                      }
+                                    );
+                                  }
+                                },
+                              }}
+                              error={
+                                errors.additionalRequests?.venue
+                                  ?.customVenue as FieldError | undefined
+                              }
+                              placeholder="e.g., Room 911, Central Block"
+                              disabled={
+                                Boolean(watchedVenueSelected) &&
+                                String(watchedVenueSelected).trim() !== ""
+                              }
+                            />
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <InputField
+                                label="Start Time"
+                                name={"additionalRequests.venue.startTime" as any}
+                                type="time"
+                                register={register}
+                                error={
+                                  errors.additionalRequests?.venue
+                                    ?.startTime as FieldError | undefined
+                                }
+                                required
+                              />
+                              <InputField
+                                label="End Time"
+                                name={"additionalRequests.venue.endTime" as any}
+                                type="time"
+                                register={register}
+                                error={
+                                  errors.additionalRequests?.venue
+                                    ?.endTime as FieldError | undefined
+                                }
+                                required
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="bg-white border border-gray-200 rounded-xl p-4">
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <label
+                              htmlFor="additionalRequests-catering-enabled"
+                              className="text-sm font-semibold text-gray-900"
+                            >
+                              Catering
+                            </label>
+                            <p className="text-xs text-gray-500 mt-1">
+                              Add food service estimate and requirements.
+                            </p>
+                          </div>
+                          <Controller
+                            name="additionalRequests.catering.enabled"
+                            control={control}
+                            render={({ field }) => (
+                              <label className="relative inline-flex items-center cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  id="additionalRequests-catering-enabled"
+                                  checked={!!field.value}
+                                  onChange={(e) => field.onChange(e.target.checked)}
+                                  className="sr-only peer"
+                                />
+                                <div className={toggleTrackClass}></div>
+                              </label>
+                            )}
+                          />
+                        </div>
+
+                        {watchedCateringEnabled && (
+                          <div className="mt-4 space-y-4">
+                            <InputField
+                              label="Approximate Count"
+                              name={
+                                "additionalRequests.catering.approximateCount" as any
+                              }
+                              type="number"
+                              inputMode="numeric"
+                              min={1}
+                              register={register}
+                              error={
+                                errors.additionalRequests?.catering
+                                  ?.approximateCount as FieldError | undefined
+                              }
+                              required
+                              placeholder="Enter expected count"
+                            />
+                            <InputField
+                              label="Description"
+                              name={"additionalRequests.catering.description" as any}
+                              as="textarea"
+                              rows={3}
+                              register={register}
+                              error={
+                                errors.additionalRequests?.catering
+                                  ?.description as FieldError | undefined
+                              }
+                              required
+                              placeholder="Veg / Non-veg preference and any additional catering details"
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="bg-white border border-gray-200 rounded-xl p-4">
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <label
+                              htmlFor="additionalRequests-stalls-enabled"
+                              className="text-sm font-semibold text-gray-900"
+                            >
+                              Stalls
+                            </label>
+                            <p className="text-xs text-gray-500 mt-1">
+                              Select canopy and/or hardboard stalls.
+                            </p>
+                          </div>
+                          <Controller
+                            name="additionalRequests.stalls.enabled"
+                            control={control}
+                            render={({ field }) => (
+                              <label className="relative inline-flex items-center cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  id="additionalRequests-stalls-enabled"
+                                  checked={!!field.value}
+                                  onChange={(e) => field.onChange(e.target.checked)}
+                                  className="sr-only peer"
+                                />
+                                <div className={toggleTrackClass}></div>
+                              </label>
+                            )}
+                          />
+                        </div>
+
+                        {watchedStallsEnabled && (
+                          <div className="mt-4 space-y-4">
+                            <div>
+                              <Controller
+                                name="additionalRequests.stalls.canopySelected"
+                                control={control}
+                                render={({ field }) => (
+                                  <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-800 cursor-pointer">
+                                    <input
+                                      id="additionalRequests.stalls.canopySelected"
+                                      type="checkbox"
+                                      checked={!!field.value}
+                                      onChange={(e) => field.onChange(e.target.checked)}
+                                      className="h-4 w-4 rounded border-gray-300 text-[#154CB3] focus:ring-[#154CB3]"
+                                    />
+                                    Canopy Stalls
+                                  </label>
+                                )}
+                              />
+                            </div>
+
+                            {watchedCanopySelected && (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <InputField
+                                  label="Canopy Quantity"
+                                  name={"additionalRequests.stalls.canopyQuantity" as any}
+                                  type="number"
+                                  inputMode="numeric"
+                                  min={0}
+                                  register={register}
+                                  error={
+                                    errors.additionalRequests?.stalls
+                                      ?.canopyQuantity as FieldError | undefined
+                                  }
+                                  required
+                                />
+                                <InputField
+                                  label="Canopy Description (optional)"
+                                  name={
+                                    "additionalRequests.stalls.canopyDescription" as any
+                                  }
+                                  register={register}
+                                  error={
+                                    errors.additionalRequests?.stalls
+                                      ?.canopyDescription as FieldError | undefined
+                                  }
+                                  placeholder="Optional notes"
+                                />
+                              </div>
+                            )}
+
+                            <div>
+                              <Controller
+                                name="additionalRequests.stalls.hardboardSelected"
+                                control={control}
+                                render={({ field }) => (
+                                  <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-800 cursor-pointer">
+                                    <input
+                                      id="additionalRequests.stalls.hardboardSelected"
+                                      type="checkbox"
+                                      checked={!!field.value}
+                                      onChange={(e) => field.onChange(e.target.checked)}
+                                      className="h-4 w-4 rounded border-gray-300 text-[#154CB3] focus:ring-[#154CB3]"
+                                    />
+                                    Hardboard Stalls
+                                  </label>
+                                )}
+                              />
+                              {errors.additionalRequests?.stalls?.canopySelected && (
+                                <p className="text-red-500 text-xs mt-1">
+                                  {
+                                    errors.additionalRequests.stalls.canopySelected
+                                      .message as string
+                                  }
+                                </p>
+                              )}
+                            </div>
+
+                            {watchedHardboardSelected && (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <InputField
+                                  label="Hardboard Quantity"
+                                  name={"additionalRequests.stalls.hardboardQuantity" as any}
+                                  type="number"
+                                  inputMode="numeric"
+                                  min={0}
+                                  register={register}
+                                  error={
+                                    errors.additionalRequests?.stalls
+                                      ?.hardboardQuantity as FieldError | undefined
+                                  }
+                                  required
+                                />
+                                <InputField
+                                  label="Hardboard Description (optional)"
+                                  name={
+                                    "additionalRequests.stalls.hardboardDescription" as any
+                                  }
+                                  register={register}
+                                  error={
+                                    errors.additionalRequests?.stalls
+                                      ?.hardboardDescription as FieldError | undefined
+                                  }
+                                  placeholder="Optional notes"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="bg-white border border-gray-200 rounded-xl p-4">
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <label
+                              htmlFor="additionalRequests-security-enabled"
+                              className="text-sm font-semibold text-gray-900"
+                            >
+                              Security
+                            </label>
+                            <p className="text-xs text-gray-500 mt-1">
+                              Basic security request description.
+                            </p>
+                          </div>
+                          <Controller
+                            name="additionalRequests.security.enabled"
+                            control={control}
+                            render={({ field }) => (
+                              <label className="relative inline-flex items-center cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  id="additionalRequests-security-enabled"
+                                  checked={!!field.value}
+                                  onChange={(e) => field.onChange(e.target.checked)}
+                                  className="sr-only peer"
+                                />
+                                <div className={toggleTrackClass}></div>
+                              </label>
+                            )}
+                          />
+                        </div>
+
+                        {watchedSecurityEnabled && (
+                          <div className="mt-4">
+                            <InputField
+                              label="Description"
+                              name={"additionalRequests.security.description" as any}
+                              as="textarea"
+                              rows={3}
+                              register={register}
+                              error={
+                                errors.additionalRequests?.security
+                                  ?.description as FieldError | undefined
+                              }
+                              required
+                              placeholder="Provide security requirements"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 sm:py-3.5">
                   <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-3">

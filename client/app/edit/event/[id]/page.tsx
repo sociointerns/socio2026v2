@@ -258,6 +258,82 @@ export default function EditEventPage() {
               }));
           };
 
+          const parseAdditionalRequests = (
+            additionalRequests: unknown
+          ): EventFormData["additionalRequests"] => {
+            const defaults = {
+              it: {
+                enabled: false,
+                description: "",
+              },
+              venue: {
+                enabled: false,
+                selectedVenue: "",
+                customVenue: "",
+                startTime: "",
+                endTime: "",
+              },
+              catering: {
+                enabled: false,
+                approximateCount: "",
+                description: "",
+              },
+              stalls: {
+                enabled: false,
+                canopySelected: false,
+                canopyQuantity: "0",
+                canopyDescription: "",
+                hardboardSelected: false,
+                hardboardQuantity: "0",
+                hardboardDescription: "",
+              },
+              security: {
+                enabled: false,
+                description: "",
+              },
+            };
+
+            if (!additionalRequests) {
+              return defaults;
+            }
+
+            let parsed: any = additionalRequests;
+            if (typeof additionalRequests === "string") {
+              try {
+                parsed = JSON.parse(additionalRequests);
+              } catch {
+                parsed = null;
+              }
+            }
+
+            if (!parsed || typeof parsed !== "object") {
+              return defaults;
+            }
+
+            return {
+              it: {
+                ...defaults.it,
+                ...(parsed.it || {}),
+              },
+              venue: {
+                ...defaults.venue,
+                ...(parsed.venue || {}),
+              },
+              catering: {
+                ...defaults.catering,
+                ...(parsed.catering || {}),
+              },
+              stalls: {
+                ...defaults.stalls,
+                ...(parsed.stalls || {}),
+              },
+              security: {
+                ...defaults.security,
+                ...(parsed.security || {}),
+              },
+            };
+          };
+
           const transformedData: Partial<EventFormData> = {
             eventTitle: data.title || "",
             eventDate: data.event_date
@@ -296,6 +372,7 @@ export default function EditEventPage() {
             rules: transformSimpleListForForm(data.rules),
             prizes: transformSimpleListForForm(data.prizes),
             customFields: Array.isArray(data.custom_fields) ? data.custom_fields : [],
+            additionalRequests: parseAdditionalRequests(data.additional_requests),
             imageFile: null, // Always null initially for form, URL is separate
             bannerFile: null,
             pdfFile: null,
@@ -538,6 +615,10 @@ export default function EditEventPage() {
 
     // Custom fields
     payload.append("custom_fields", JSON.stringify(formData.customFields || []));
+    payload.append(
+      "additional_requests",
+      JSON.stringify(formData.additionalRequests || {})
+    );
 
     const appendFile = (key: string, file: any) => {
       if (!file) return false;
@@ -632,7 +713,12 @@ export default function EditEventPage() {
           errorData.detail ||
           `Update failed: ${response.status}`;
         setErrorMessage(`Update error: ${apiErrorMsg}`);
-        throw new Error(apiErrorMsg);
+        const wrappedError = new Error(apiErrorMsg);
+        (wrappedError as any).fieldErrors =
+          errorData.fieldErrors && typeof errorData.fieldErrors === "object"
+            ? errorData.fieldErrors
+            : null;
+        throw wrappedError;
       }
 
       try {

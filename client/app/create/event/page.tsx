@@ -223,6 +223,10 @@ export default function CreateEventPage() {
     appendJsonArrayOrObject("prizes", dataFromHookForm.prizes);
     appendJsonArrayOrObject("event_heads", dataFromHookForm.eventHeads);
     appendJsonArrayOrObject("custom_fields", dataFromHookForm.customFields);
+    appendJsonArrayOrObject(
+      "additional_requests",
+      dataFromHookForm.additionalRequests
+    );
     appendIfExists("created_by", userEmail);
 
     const appendFile = (key: string, file: any) => {
@@ -309,7 +313,12 @@ export default function CreateEventPage() {
           (typeof errorData.details === "string" ? errorData.details : null) ||
           errorData.detail ||
           `Server error: ${response.status} ${response.statusText}`;
-        throw new Error(message);
+        const wrappedError = new Error(message);
+        (wrappedError as any).fieldErrors =
+          errorData.fieldErrors && typeof errorData.fieldErrors === "object"
+            ? errorData.fieldErrors
+            : null;
+        throw wrappedError;
       }
 
       const result = await response.json();
@@ -323,11 +332,16 @@ export default function CreateEventPage() {
         error.message,
         error
       );
-      alert(
-        `Failed to ${saveAsDraft ? "save draft" : "create event"}. ${
-          error?.message || "An unknown error occurred."
-        }`
-      );
+
+      const hasInlineFieldErrors =
+        error?.fieldErrors && typeof error.fieldErrors === "object";
+      if (!hasInlineFieldErrors) {
+        alert(
+          `Failed to ${saveAsDraft ? "save draft" : "create event"}. ${
+            error?.message || "An unknown error occurred."
+          }`
+        );
+      }
       throw error;
     } finally {
       console.log("CreateEventPage: submitEvent FINALLY block.");
