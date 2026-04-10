@@ -18,6 +18,15 @@ const supabase = createClient(
 
 const router = express.Router();
 
+const VALID_CAMPUSES = [
+  'Central Campus (Main)',
+  'Bannerghatta Road Campus',
+  'Yeshwanthpur Campus',
+  'Kengeri Campus',
+  'Delhi NCR Campus',
+  'Pune Lavasa Campus'
+];
+
 // Get all users with optional search and role filter (master admin only)
 router.get(
   "/",
@@ -28,6 +37,7 @@ router.get(
   async (req, res) => {
   try {
     const { search, role, page, pageSize, sortBy, sortOrder } = req.query;
+    const normalizeRole = (value) => String(value || '').trim().toLowerCase();
     
     let users = await queryAll("users");
     
@@ -57,6 +67,13 @@ router.get(
           break;
         case 'dean':
           users = users.filter(user => user.is_dean);
+          break;
+        case 'cfo':
+          users = users.filter(user => normalizeRole(user.university_role) === 'cfo');
+          break;
+        case 'finance':
+        case 'finance_officer':
+          users = users.filter(user => normalizeRole(user.university_role) === 'finance_officer');
           break;
       }
     }
@@ -150,7 +167,7 @@ router.get(
         .sort((left, right) => left.localeCompare(right))
         .map((name) => ({ id: name, name }));
 
-      return res.status(200).json({ departments, schools });
+      return res.status(200).json({ departments, schools, campuses: VALID_CAMPUSES });
     } catch (error) {
       console.error("Error fetching role scope options:", error);
       return res.status(500).json({ error: "Internal server error" });
@@ -565,8 +582,12 @@ router.put("/:email/roles", authenticateUser, getUserInfo(), checkRoleExpiration
       masteradmin_expires_at,
       is_hod,
       is_dean,
+      is_cfo,
+      is_finance_officer,
       department_id,
-      school_id
+      school_id,
+      campus,
+      university_role
     } = req.body;
 
     // Check if user exists
@@ -608,12 +629,47 @@ router.put("/:email/roles", authenticateUser, getUserInfo(), checkRoleExpiration
     const roleScopePayloadProvided =
       typeof is_hod === 'boolean' ||
       typeof is_dean === 'boolean' ||
+      typeof is_cfo === 'boolean' ||
+      typeof is_finance_officer === 'boolean' ||
       department_id !== undefined ||
-      school_id !== undefined;
+      school_id !== undefined ||
+      campus !== undefined ||
+      university_role !== undefined;
 
     if (roleScopePayloadProvided) {
-      const nextIsHod = typeof is_hod === 'boolean' ? is_hod : Boolean(existingUser.is_hod);
-      const nextIsDean = typeof is_dean === 'boolean' ? is_dean : Boolean(existingUser.is_dean);
+      const existingRole = String(existingUser.university_role || '').trim().toLowerCase();
+
+      let nextIsHod =
+        typeof is_hod === 'boolean'
+          ? is_hod
+          : Boolean(existingUser.is_hod) || existingRole === 'hod';
+      let nextIsDean =
+        typeof is_dean === 'boolean'
+          ? is_dean
+          : Boolean(existingUser.is_dean) || existingRole === 'dean';
+      let nextIsCfo =
+        typeof is_cfo === 'boolean'
+          ? is_cfo
+          : existingRole === 'cfo';
+      let nextIsFinanceOfficer =
+        typeof is_finance_officer === 'boolean'
+          ? is_finance_officer
+          : existingRole === 'finance_officer';
+
+      if (university_role !== undefined && university_role !== null && String(university_role).trim() !== '') {
+        const requestedRole = String(university_role).trim().toLowerCase();
+        const validRoles = ['hod', 'dean', 'cfo', 'finance_officer'];
+        if (!validRoles.includes(requestedRole)) {
+          return res.status(400).json({
+            error: 'Invalid university_role value.'
+          });
+        }
+
+        nextIsHod = requestedRole === 'hod';
+        nextIsDean = requestedRole === 'dean';
+        nextIsCfo = requestedRole === 'cfo';
+        nextIsFinanceOfficer = requestedRole === 'finance_officer';
+      }
 
       const rawDepartmentId =
         department_id !== undefined
@@ -623,6 +679,10 @@ router.put("/:email/roles", authenticateUser, getUserInfo(), checkRoleExpiration
         school_id !== undefined
           ? school_id
           : existingUser.school_id;
+      const rawCampus =
+        campus !== undefined
+          ? campus
+          : existingUser.campus;
 
       const nextDepartmentId =
         rawDepartmentId === null || rawDepartmentId === undefined
@@ -634,9 +694,16 @@ router.put("/:email/roles", authenticateUser, getUserInfo(), checkRoleExpiration
           ? null
           : String(rawSchoolId).trim() || null;
 
-      if (nextIsHod && nextIsDean) {
+      const nextCampus =
+        rawCampus === null || rawCampus === undefined
+          ? null
+          : String(rawCampus).trim() || null;
+
+      const enabledScopedRoles = [nextIsHod, nextIsDean, nextIsCfo, nextIsFinanceOfficer].filter(Boolean).length;
+
+      if (enabledScopedRoles > 1) {
         return res.status(400).json({
-          error: "A user cannot be both HOD and Dean."
+          error: "A user can hold only one scoped role at a time (HOD, Dean, CFO, Finance Officer)."
         });
       }
 
@@ -652,10 +719,38 @@ router.put("/:email/roles", authenticateUser, getUserInfo(), checkRoleExpiration
         });
       }
 
+      if (nextIsCfo && !nextCampus) {
+        return res.status(400).json({
+          error: "Select a campus before enabling CFO."
+        });
+      }
+
+      if (nextIsCfo && nextCampus && !VALID_CAMPUSES.includes(nextCampus)) {
+        return res.status(400).json({
+          error: "Invalid campus selection for CFO role."
+        });
+      }
+
+      let nextUniversityRole = String(existingUser.university_role || '').trim().toLowerCase() || null;
+
+      if (nextIsHod) {
+        nextUniversityRole = 'hod';
+      } else if (nextIsDean) {
+        nextUniversityRole = 'dean';
+      } else if (nextIsCfo) {
+        nextUniversityRole = 'cfo';
+      } else if (nextIsFinanceOfficer) {
+        nextUniversityRole = 'finance_officer';
+      } else if (['hod', 'dean', 'cfo', 'finance_officer'].includes(String(nextUniversityRole))) {
+        nextUniversityRole = null;
+      }
+
       updates.is_hod = nextIsHod;
       updates.is_dean = nextIsDean;
       updates.department_id = nextIsHod ? nextDepartmentId : null;
       updates.school_id = nextIsDean ? nextSchoolId : null;
+      updates.campus = nextIsCfo ? nextCampus : null;
+      updates.university_role = nextUniversityRole;
     }
 
     // Update user
@@ -739,16 +834,7 @@ router.patch("/:email/campus", async (req, res) => {
       return res.status(400).json({ error: 'Campus must be a non-empty string' });
     }
 
-    const validCampuses = [
-      'Central Campus (Main)',
-      'Bannerghatta Road Campus',
-      'Yeshwanthpur Campus',
-      'Kengeri Campus',
-      'Delhi NCR Campus',
-      'Pune Lavasa Campus'
-    ];
-
-    if (!validCampuses.includes(campus.trim())) {
+    if (!VALID_CAMPUSES.includes(campus.trim())) {
       return res.status(400).json({ error: 'Invalid campus selection' });
     }
 

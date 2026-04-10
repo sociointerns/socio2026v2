@@ -84,8 +84,11 @@ type User = {
   masteradmin_expires_at?: string | null;
   is_hod?: boolean;
   is_dean?: boolean;
+  is_cfo?: boolean;
+  is_finance_officer?: boolean;
   department_id?: string | null;
   school_id?: string | null;
+  campus?: string | null;
   university_role?: string | null;
   created_at: string;
   course?: string | null;
@@ -102,6 +105,8 @@ type SchoolScopeOption = {
   id: string;
   name: string;
 };
+
+type CampusScopeOption = string;
 
 type Event = {
   event_id: string;
@@ -173,6 +178,67 @@ const ACCREDITATION_BODIES = [
   { id: "ugc", name: "UGC", fullName: "University Grants Commission", description: "Regulatory authority for universities in India.", focus: "University standards, grants, governance." },
 ];
 
+const CAMPUS_SCOPE_FALLBACK: CampusScopeOption[] = [
+  "Central Campus (Main)",
+  "Bannerghatta Road Campus",
+  "Yeshwanthpur Campus",
+  "Kengeri Campus",
+  "Delhi NCR Campus",
+  "Pune Lavasa Campus",
+];
+
+type ScopedRole = "hod" | "dean" | "cfo" | "finance_officer" | null;
+
+const normalizeScopedRole = (value: unknown): ScopedRole => {
+  const normalized = String(value || "").toLowerCase().trim();
+  if (
+    normalized === "hod" ||
+    normalized === "dean" ||
+    normalized === "cfo" ||
+    normalized === "finance_officer"
+  ) {
+    return normalized;
+  }
+
+  return null;
+};
+
+const deriveScopedRoleFromUser = (user: Partial<User>): ScopedRole => {
+  const normalizedRole = normalizeScopedRole(user.university_role);
+  if (normalizedRole) {
+    return normalizedRole;
+  }
+
+  if (user.is_hod) {
+    return "hod";
+  }
+
+  if (user.is_dean) {
+    return "dean";
+  }
+
+  if (user.is_cfo) {
+    return "cfo";
+  }
+
+  if (user.is_finance_officer) {
+    return "finance_officer";
+  }
+
+  return null;
+};
+
+const scopedRoleBooleans = (user: Partial<User>) => {
+  const role = deriveScopedRoleFromUser(user);
+  return {
+    role,
+    isHod: role === "hod",
+    isDean: role === "dean",
+    isCfo: role === "cfo",
+    isFinanceOfficer: role === "finance_officer",
+  };
+};
+
 export default function MasterAdminPage() {
   const { userData, isMasterAdmin, isLoading: authLoading, session } = useAuth();
   const router = useRouter();
@@ -200,6 +266,7 @@ export default function MasterAdminPage() {
   const [editingUserRoles, setEditingUserRoles] = useState<Partial<User>>({});
   const [departmentScopeOptions, setDepartmentScopeOptions] = useState<DepartmentScopeOption[]>([]);
   const [schoolScopeOptions, setSchoolScopeOptions] = useState<SchoolScopeOption[]>([]);
+  const [campusScopeOptions, setCampusScopeOptions] = useState<CampusScopeOption[]>([]);
   const [showDeleteUserConfirm, setShowDeleteUserConfirm] = useState<string | null>(null);
   const [userPage, setUserPage] = useState(1);
   
@@ -491,6 +558,13 @@ export default function MasterAdminPage() {
       const data = await response.json();
       setDepartmentScopeOptions(Array.isArray(data?.departments) ? data.departments : []);
       setSchoolScopeOptions(Array.isArray(data?.schools) ? data.schools : []);
+      setCampusScopeOptions(
+        Array.isArray(data?.campuses)
+          ? data.campuses
+              .map((campusName: unknown) => String(campusName || "").trim())
+              .filter((campusName: string) => campusName.length > 0)
+          : CAMPUS_SCOPE_FALLBACK
+      );
     } catch (error) {
       console.error("Error fetching role scope options:", error);
     }
@@ -588,6 +662,8 @@ export default function MasterAdminPage() {
   };
 
   const startEditUser = (user: User) => {
+    const scopedRole = deriveScopedRoleFromUser(user);
+
     setEditingUserId(user.id);
     setEditingUserRoles({
       is_organiser: user.is_organiser,
@@ -596,39 +672,82 @@ export default function MasterAdminPage() {
       support_expires_at: user.support_expires_at,
       is_masteradmin: user.is_masteradmin,
       masteradmin_expires_at: user.masteradmin_expires_at,
-      is_hod: Boolean(user.is_hod),
-      is_dean: Boolean(user.is_dean),
-      department_id: user.department_id || null,
-      school_id: user.school_id || null,
+      is_hod: scopedRole === "hod",
+      is_dean: scopedRole === "dean",
+      is_cfo: scopedRole === "cfo",
+      is_finance_officer: scopedRole === "finance_officer",
+      department_id: scopedRole === "hod" ? user.department_id || null : null,
+      school_id: scopedRole === "dean" ? user.school_id || null : null,
+      campus: scopedRole === "cfo" ? user.campus || null : null,
+      university_role: scopedRole,
     });
   };
 
   const handleRoleToggle = (
-    role: "is_organiser" | "is_support" | "is_masteradmin" | "is_hod" | "is_dean"
+    role:
+      | "is_organiser"
+      | "is_support"
+      | "is_masteradmin"
+      | "is_hod"
+      | "is_dean"
+      | "is_cfo"
+      | "is_finance_officer"
   ) => {
     setEditingUserRoles((prev) => {
+      if (role === "is_hod" || role === "is_dean" || role === "is_cfo" || role === "is_finance_officer") {
+        const shouldEnable = !Boolean(prev[role]);
+
+        const resetScopedRoles: Partial<User> = {
+          ...prev,
+          is_hod: false,
+          is_dean: false,
+          is_cfo: false,
+          is_finance_officer: false,
+          department_id: null,
+          school_id: null,
+          campus: null,
+          university_role: null,
+        };
+
+        if (!shouldEnable) {
+          return resetScopedRoles;
+        }
+
+        if (role === "is_hod") {
+          return {
+            ...resetScopedRoles,
+            is_hod: true,
+            university_role: "hod",
+          };
+        }
+
+        if (role === "is_dean") {
+          return {
+            ...resetScopedRoles,
+            is_dean: true,
+            university_role: "dean",
+          };
+        }
+
+        if (role === "is_cfo") {
+          return {
+            ...resetScopedRoles,
+            is_cfo: true,
+            university_role: "cfo",
+          };
+        }
+
+        return {
+          ...resetScopedRoles,
+          is_finance_officer: true,
+          university_role: "finance_officer",
+        };
+      }
+
       const next = {
         ...prev,
         [role]: !prev[role],
       };
-
-      if (role === "is_hod") {
-        if (next.is_hod) {
-          next.is_dean = false;
-          next.school_id = null;
-        } else {
-          next.department_id = null;
-        }
-      }
-
-      if (role === "is_dean") {
-        if (next.is_dean) {
-          next.is_hod = false;
-          next.department_id = null;
-        } else {
-          next.school_id = null;
-        }
-      }
 
       return next;
     });
@@ -644,7 +763,10 @@ export default function MasterAdminPage() {
     }));
   };
 
-  const handleRoleScopeChange = (field: "department_id" | "school_id", value: string | null) => {
+  const handleRoleScopeChange = (
+    field: "department_id" | "school_id" | "campus",
+    value: string | null
+  ) => {
     setEditingUserRoles((prev) => ({
       ...prev,
       [field]: value,
@@ -653,6 +775,51 @@ export default function MasterAdminPage() {
 
   const saveRoleChanges = async (user: User) => {
     try {
+      const scopedRole = deriveScopedRoleFromUser(editingUserRoles);
+      const isHodScoped = scopedRole === "hod";
+      const isDeanScoped = scopedRole === "dean";
+      const isCfoScoped = scopedRole === "cfo";
+      const isFinanceScoped = scopedRole === "finance_officer";
+      const selectedDepartmentId =
+        editingUserRoles.department_id !== undefined && editingUserRoles.department_id !== null
+          ? String(editingUserRoles.department_id).trim() || null
+          : null;
+      const selectedSchoolId =
+        editingUserRoles.school_id !== undefined && editingUserRoles.school_id !== null
+          ? String(editingUserRoles.school_id).trim() || null
+          : null;
+      const selectedCampus =
+        editingUserRoles.campus !== undefined && editingUserRoles.campus !== null
+          ? String(editingUserRoles.campus).trim() || null
+          : null;
+      const availableCampuses =
+        campusScopeOptions.length > 0 ? campusScopeOptions : CAMPUS_SCOPE_FALLBACK;
+
+      if (isHodScoped && !selectedDepartmentId) {
+        toast.error("Select a department before assigning HOD.");
+        return;
+      }
+
+      if (isDeanScoped && !selectedSchoolId) {
+        toast.error("Select a school before assigning Dean.");
+        return;
+      }
+
+      if (isCfoScoped && !selectedCampus) {
+        toast.error("Select a campus before assigning CFO.");
+        return;
+      }
+
+      if (isCfoScoped && selectedCampus && !availableCampuses.includes(selectedCampus)) {
+        toast.error("Invalid campus selection for CFO role.");
+        return;
+      }
+
+      if (isFinanceScoped && (selectedDepartmentId || selectedSchoolId || selectedCampus)) {
+        toast.error("Finance Officer is global and cannot be tied to department, school, or campus.");
+        return;
+      }
+
       const token = await getFreshToken();
       const response = await fetch(`${API_URL}/api/users/${encodeURIComponent(user.email)}/roles`, {
         method: "PUT",
@@ -667,10 +834,14 @@ export default function MasterAdminPage() {
           support_expires_at: editingUserRoles.support_expires_at || null,
           is_masteradmin: editingUserRoles.is_masteradmin,
           masteradmin_expires_at: editingUserRoles.masteradmin_expires_at || null,
-          is_hod: Boolean(editingUserRoles.is_hod),
-          is_dean: Boolean(editingUserRoles.is_dean),
-          department_id: editingUserRoles.department_id || null,
-          school_id: editingUserRoles.school_id || null,
+          is_hod: isHodScoped,
+          is_dean: isDeanScoped,
+          is_cfo: isCfoScoped,
+          is_finance_officer: isFinanceScoped,
+          university_role: scopedRole,
+          department_id: isHodScoped ? selectedDepartmentId : null,
+          school_id: isDeanScoped ? selectedSchoolId : null,
+          campus: isCfoScoped ? selectedCampus : null,
         }),
       });
 
@@ -1033,6 +1204,8 @@ export default function MasterAdminPage() {
                     <option value="support">Support</option>
                     <option value="hod">HOD</option>
                     <option value="dean">Dean</option>
+                    <option value="cfo">CFO</option>
+                    <option value="finance_officer">Finance Officer</option>
                     <option value="masteradmin">Master Admins</option>
                   </select>
                 </div>
@@ -1079,6 +1252,12 @@ export default function MasterAdminPage() {
                           </th>
                           <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                             Dean
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                            CFO
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                            Finance
                           </th>
                           <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                             Master Admin
