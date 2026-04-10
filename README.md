@@ -35,7 +35,7 @@ A full-featured platform for managing university events, fests, and registration
 
 All roles support **expiration dates** with automatic revocation. Last Master Admin protection prevents platform lockout.
 
----f
+---
 
 ## Features
 
