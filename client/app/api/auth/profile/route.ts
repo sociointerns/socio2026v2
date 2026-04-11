@@ -5,6 +5,16 @@ import { getCurrentUserProfileWithRoleCodes } from "@/lib/serverRoleProfile";
 
 export const dynamic = "force-dynamic";
 
+function getBearerTokenFromRequest(request: Request): string | null {
+  const authorizationHeader = request.headers.get("authorization") || "";
+  if (!authorizationHeader.toLowerCase().startsWith("bearer ")) {
+    return null;
+  }
+
+  const token = authorizationHeader.slice(7).trim();
+  return token.length > 0 ? token : null;
+}
+
 function hasSupabaseConfig(): boolean {
   return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 }
@@ -28,7 +38,7 @@ async function buildSupabaseServerClient() {
   });
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   if (!hasSupabaseConfig()) {
     return NextResponse.json(
       { error: "Supabase environment variables are missing." },
@@ -37,10 +47,13 @@ export async function GET() {
   }
 
   const supabase = await buildSupabaseServerClient();
+  const bearerToken = getBearerTokenFromRequest(request);
   const {
     data: { user },
     error: userError,
-  } = await supabase.auth.getUser();
+  } = bearerToken
+    ? await supabase.auth.getUser(bearerToken)
+    : await supabase.auth.getUser();
 
   if (userError || !user) {
     return NextResponse.json({ error: "Authentication required." }, { status: 401 });

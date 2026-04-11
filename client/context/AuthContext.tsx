@@ -375,7 +375,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let runtimeUserRecord: Record<string, unknown> | null = null;
 
     try {
-      const response = await fetch(`${API_URL}/api/users/${encodeURIComponent(email)}`);
+      const response = await fetch(`${API_URL}/api/users/${encodeURIComponent(email)}`, {
+        cache: "no-store",
+      });
       if (!response.ok) {
         if (response.status === 404) {
           console.warn(
@@ -396,7 +398,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Resolve role context from the same client deployment to avoid cross-deployment drift.
     try {
-      const runtimeResponse = await fetch("/api/auth/profile", { cache: "no-store" });
+      let runtimeAccessToken: string | null = null;
+      if (supabase) {
+        const {
+          data: { session: runtimeSession },
+        } = await supabase.auth.getSession();
+        runtimeAccessToken = runtimeSession?.access_token || null;
+      }
+
+      const runtimeResponse = await fetch("/api/auth/profile", {
+        cache: "no-store",
+        headers: runtimeAccessToken
+          ? {
+              Authorization: `Bearer ${runtimeAccessToken}`,
+            }
+          : undefined,
+      });
       if (runtimeResponse.ok) {
         const runtimeData = await runtimeResponse.json();
         if (runtimeData?.user && typeof runtimeData.user === "object") {
