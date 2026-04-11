@@ -35,6 +35,7 @@ interface Student {
   name: string;
   registerNumber: string;
   course: string;
+  school: string;
   department: string;
   campus: string;
   email: string;
@@ -48,12 +49,14 @@ interface UserData {
   register_number?: string | number;
   email?: string;
   course?: string;
+  school?: string;
   department?: string;
   campus?: string;
   created_at?: string;
   avatar_url?: string;
   is_organiser?: boolean;
   is_support?: boolean;
+  organization_type?: "christ_member" | "outsider";
 }
 
 const StudentProfile = () => {
@@ -64,6 +67,7 @@ const StudentProfile = () => {
     name: "",
     registerNumber: "",
     course: "",
+    school: "",
     department: "",
     campus: "",
     email: "",
@@ -98,6 +102,7 @@ const StudentProfile = () => {
         registerNumber: String(userData.register_number || ""),
         email: userData.email || "",
         course: isStaff ? "Staff" : (userData.course || "Not specified"),
+        school: userData.school || "Not specified",
         department: isStaff ? "Staff" : (userData.department || "Not specified"),
         campus: userData.campus || "Not specified",
         joined: joinedFormatted,
@@ -189,6 +194,7 @@ const StudentProfile = () => {
   const [nameEditError, setNameEditError] = useState<string | null>(null);
 
   const canEditName = (userData as any)?.organization_type === 'outsider' && !(userData as any)?.outsider_name_edit_used;
+  const isChristOrganizationUser = userData?.organization_type === "christ_member";
   const isVisitorAccount =
     (userData as any)?.organization_type === 'outsider' ||
     (userData as any)?.is_christ_member === false ||
@@ -375,6 +381,16 @@ const StudentProfile = () => {
                           {student.course}
                         </p>
                       </div>
+                      {isChristOrganizationUser && (
+                        <div>
+                          <h3 className="text-xs sm:text-sm font-medium text-gray-500">
+                            School
+                          </h3>
+                          <p className="text-sm sm:text-base text-gray-800 font-medium">
+                            {student.school}
+                          </p>
+                        </div>
+                      )}
                       <div>
                         <h3 className="text-xs sm:text-sm font-medium text-gray-500">
                           Department

@@ -17,6 +17,7 @@ type UserData = {
   register_number: string | null;
   email: string;
   course: string | null;
+  school?: string | null;
   department: string | null;
   badges: any;
   campus: string | null;
