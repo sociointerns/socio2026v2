@@ -138,11 +138,15 @@ async function resolveFinanceSession() {
     };
   }
 
-  const universityRole = normalizeLower((profile as Record<string, unknown>).university_role);
-  if (universityRole !== "finance_officer") {
+  const profileRecord = profile as Record<string, unknown>;
+  const universityRole = normalizeLower(profileRecord.university_role);
+  const isMasterAdmin = Boolean(profileRecord.is_masteradmin);
+  const isFinanceOfficer =
+    universityRole === "finance_officer" || Boolean(profileRecord.is_finance_officer);
+  if (!isFinanceOfficer && !isMasterAdmin) {
     return {
       ok: false as const,
-      error: "Only Finance Officer users can perform this action.",
+      error: "Only Finance Officer or Master Admin users can perform this action.",
       supabase,
       user,
       profile,

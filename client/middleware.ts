@@ -130,8 +130,10 @@ export async function middleware(req: NextRequest) {
       Boolean((userData as any)?.is_cfo) ||
       hasRoleAlias(universityRole, ["cfo"]);
     const canAccessStudentOrganiserRoute =
+      Boolean(userData?.is_masteradmin) ||
       hasRoleAlias(universityRole, ["student organiser", "student_organiser"]);
     const canAccessFinanceRoute =
+      Boolean(userData?.is_masteradmin) ||
       Boolean((userData as any)?.is_finance_officer) ||
       hasRoleAlias(universityRole, ["finance officer", "finance_officer"]);
     const canAccessServiceRoleRoute = matchedServiceRoleRoute

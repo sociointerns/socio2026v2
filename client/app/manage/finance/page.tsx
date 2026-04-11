@@ -87,7 +87,10 @@ export default async function FinanceManagePage() {
   }
 
   const universityRole = String(userProfile.university_role || "").toLowerCase().trim();
-  if (universityRole !== "finance_officer") {
+  const isMasterAdmin = Boolean(userProfile.is_masteradmin);
+  const isFinanceOfficer =
+    universityRole === "finance_officer" || Boolean((userProfile as any).is_finance_officer);
+  if (!isFinanceOfficer && !isMasterAdmin) {
     redirect("/manage");
   }
 

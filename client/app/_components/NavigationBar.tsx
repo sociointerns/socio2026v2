@@ -168,10 +168,12 @@ function NavigationBar() {
     (userData as Record<string, unknown> | null) || null,
     isMasterAdmin
   );
+  const canOpenManageDashboard = isOrganiser || isMasterAdmin;
   const canOpenHodDashboard = isHod || isMasterAdmin;
   const canOpenDeanDashboard = isDean || isMasterAdmin;
   const canOpenCfoDashboard = isCfo || isMasterAdmin;
-  const canOpenFinanceDashboard = isFinanceOfficer;
+  const canOpenStudentOrganiserDashboard = isStudentOrganiser || isMasterAdmin;
+  const canOpenFinanceDashboard = isFinanceOfficer || isMasterAdmin;
   const isManagementUser =
     isMasterAdmin ||
     isOrganiser ||
@@ -185,10 +187,14 @@ function NavigationBar() {
     isMasterAdmin
       ? { name: "Admin", href: "/masteradmin", variant: "danger" }
       : null,
-    isOrganiser
-      ? { name: "Organiser", href: "/manage", variant: "brand" }
+    canOpenManageDashboard
+      ? {
+          name: isOrganiser ? "Organiser" : "Manage Dashboard",
+          href: "/manage",
+          variant: "brand",
+        }
       : null,
-    isStudentOrganiser
+    canOpenStudentOrganiserDashboard
       ? {
           name: "Student Organiser Dashboard",
           href: "/manage/student-organiser",
@@ -529,7 +535,6 @@ function NavigationBar() {
                         onClick={() => setShowRoleDashboardsDropdown((prev) => !prev)}
                         className="inline-flex cursor-pointer items-center gap-2 font-semibold px-3 py-1.5 sm:px-4 sm:py-2 border-2 rounded-full text-xs sm:text-sm border-slate-700 text-slate-700 hover:bg-slate-100 transition-all duration-200 ease-in-out"
                         aria-haspopup="menu"
-                        aria-expanded={showRoleDashboardsDropdown}
                       >
                         Dashboards
                         <svg
@@ -815,7 +820,6 @@ function NavigationBar() {
                         onClick={() => setShowRoleDashboardsDropdown((prev) => !prev)}
                         className="w-full flex items-center justify-between px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors duration-200"
                         aria-haspopup="menu"
-                        aria-expanded={showRoleDashboardsDropdown}
                       >
                         <span>Dashboards</span>
                         <svg
@@ -898,7 +902,6 @@ function NavigationBar() {
                   onClick={() => setShowRoleDashboardsDropdown((prev) => !prev)}
                   className="w-full inline-flex items-center justify-center gap-2 rounded-full border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition-colors duration-200"
                   aria-haspopup="menu"
-                  aria-expanded={showRoleDashboardsDropdown}
                 >
                   Dashboards
                   <svg

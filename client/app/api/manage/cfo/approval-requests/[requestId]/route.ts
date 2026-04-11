@@ -145,7 +145,10 @@ export async function PATCH(
     }
 
     const universityRole = String(userProfile.university_role || "").toLowerCase().trim();
-    if (universityRole !== "cfo") {
+    const isMasterAdmin = Boolean(userProfile.is_masteradmin);
+    const isCfo = Boolean(userProfile.is_cfo) || universityRole === "cfo";
+
+    if (!isMasterAdmin && !isCfo) {
       return jsonError(403, "Only CFO users can perform L3 actions.");
     }
 

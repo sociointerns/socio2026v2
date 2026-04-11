@@ -472,8 +472,8 @@ export default function ManageDashboard() {
   const canOpenHodDashboard = isHod || isMasterAdmin;
   const canOpenDeanDashboard = isDean || isMasterAdmin;
   const canOpenCfoDashboard = isCfo || isMasterAdmin;
-  const canOpenStudentOrganiserDashboard = isStudentOrganiser;
-  const canOpenFinanceDashboard = isFinanceOfficer;
+  const canOpenStudentOrganiserDashboard = isStudentOrganiser || isMasterAdmin;
+  const canOpenFinanceDashboard = isFinanceOfficer || isMasterAdmin;
   
   // Fests Data
   const [fests, setFests] = useState<Fest[]>([]);
@@ -501,12 +501,12 @@ export default function ManageDashboard() {
       return;
     }
 
-    if (isStudentOrganiser) {
-      router.replace("/manage/student-organiser");
+    if (isMasterAdmin || isOrganiser) {
       return;
     }
 
-    if (isMasterAdmin || isOrganiser) {
+    if (isStudentOrganiser) {
+      router.replace("/manage/student-organiser");
       return;
     }
 

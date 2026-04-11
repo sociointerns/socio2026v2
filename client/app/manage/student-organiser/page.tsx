@@ -88,7 +88,8 @@ export default async function StudentOrganiserManagePage() {
   }
 
   const universityRole = String(userProfile.university_role || "").toLowerCase().trim();
-  if (universityRole !== "student_organiser") {
+  const isMasterAdmin = Boolean(userProfile.is_masteradmin);
+  if (universityRole !== "student_organiser" && !isMasterAdmin) {
     redirect("/manage");
   }
 

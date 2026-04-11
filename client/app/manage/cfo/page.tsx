@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 
 import CfoDashboardClient from "./_components/CfoDashboardClient";
 import { fetchCfoDashboardData } from "./_lib/cfoDashboardData";
+import { hasRoleAlias } from "@/lib/roleDashboards";
 
 export const dynamic = "force-dynamic";
 
@@ -108,15 +109,14 @@ export default async function CfoManagePage() {
   }
 
   const universityRole = String(userProfile.university_role || "").toLowerCase().trim();
-  if (universityRole !== "cfo") {
+  const isMasterAdmin = Boolean(userProfile.is_masteradmin);
+  const isCfo = Boolean(userProfile.is_cfo) || hasRoleAlias(universityRole, ["cfo"]);
+
+  if (!isMasterAdmin && !isCfo) {
     redirect("/manage");
   }
 
   const campusName = String(userProfile.campus || "").trim();
-  if (!campusName) {
-    redirect("/error");
-  }
-
   const l2Threshold = await resolveL2Threshold(supabase, campusName);
 
   const fallbackDashboardData: Awaited<ReturnType<typeof fetchCfoDashboardData>> = {
@@ -133,15 +133,19 @@ export default async function CfoManagePage() {
   let dashboardData: Awaited<ReturnType<typeof fetchCfoDashboardData>> = fallbackDashboardData;
   let dashboardErrorMessage: string | null = null;
 
-  try {
-    dashboardData = await fetchCfoDashboardData({
-      supabase,
-      campus: campusName,
-      l2Threshold,
-    });
-  } catch (error) {
-    dashboardErrorMessage =
-      error instanceof Error ? error.message : "Unable to load CFO dashboard data right now.";
+  if (!campusName) {
+    dashboardErrorMessage = "No campus scope is mapped to this CFO account.";
+  } else {
+    try {
+      dashboardData = await fetchCfoDashboardData({
+        supabase,
+        campus: campusName,
+        l2Threshold,
+      });
+    } catch (error) {
+      dashboardErrorMessage =
+        error instanceof Error ? error.message : "Unable to load CFO dashboard data right now.";
+    }
   }
 
   return (

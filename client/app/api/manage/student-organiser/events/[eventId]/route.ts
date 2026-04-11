@@ -313,9 +313,10 @@ export async function PATCH(
   }
 
   const universityRole = normalizeLower(userProfile.university_role);
-  if (universityRole !== "student_organiser") {
+  const isMasterAdmin = Boolean(userProfile.is_masteradmin);
+  if (universityRole !== "student_organiser" && !isMasterAdmin) {
     return NextResponse.json(
-      { error: "Only Student Organisers can update this dashboard." },
+      { error: "Only Student Organisers or Master Admins can update this dashboard." },
       { status: 403 }
     );
   }
@@ -353,7 +354,7 @@ export async function PATCH(
   const isCreator = normalizeLower(eventRow.created_by) === currentUserEmail;
   const isEventHead = parseEventHeads(eventRow.event_heads).includes(currentUserEmail);
 
-  if (!isCreator && !isEventHead) {
+  if (!isMasterAdmin && !isCreator && !isEventHead) {
     return NextResponse.json(
       { error: "You can only update events you created or where you are listed in event_heads." },
       { status: 403 }
