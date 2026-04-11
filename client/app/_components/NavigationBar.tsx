@@ -63,6 +63,66 @@ const discoverNestedLinks: Record<string, Array<{ name: string; href: string }>>
   ]
 };
 
+type RoleDashboardVariant = "danger" | "brand" | "neutral" | "amber" | "emerald";
+
+interface RoleDashboardLink {
+  name: string;
+  href: string;
+  variant: RoleDashboardVariant;
+}
+
+const desktopRoleLinkClassByVariant: Record<RoleDashboardVariant, string> = {
+  danger:
+    "inline-flex cursor-pointer font-semibold px-3 py-1.5 sm:px-4 sm:py-2 border-2 rounded-full text-xs sm:text-sm hover:bg-red-50 border-red-600 text-red-600 transition-all duration-200 ease-in-out",
+  brand:
+    "inline-flex cursor-pointer font-semibold px-3 py-1.5 sm:px-4 sm:py-2 border-2 rounded-full text-xs sm:text-sm hover:bg-[#f3f3f3] transition-all duration-200 ease-in-out",
+  neutral:
+    "inline-flex cursor-pointer font-semibold px-3 py-1.5 sm:px-4 sm:py-2 border-2 rounded-full text-xs sm:text-sm border-slate-700 text-slate-700 hover:bg-slate-100 transition-all duration-200 ease-in-out",
+  amber:
+    "inline-flex cursor-pointer font-semibold px-3 py-1.5 sm:px-4 sm:py-2 border-2 rounded-full text-xs sm:text-sm border-amber-500 text-amber-700 hover:bg-amber-50 transition-all duration-200 ease-in-out",
+  emerald:
+    "inline-flex cursor-pointer font-semibold px-3 py-1.5 sm:px-4 sm:py-2 border-2 rounded-full text-xs sm:text-sm border-emerald-600 text-emerald-700 hover:bg-emerald-50 transition-all duration-200 ease-in-out",
+};
+
+const quickActionRoleLinkClassByVariant: Record<RoleDashboardVariant, string> = {
+  danger:
+    "block rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors duration-200",
+  brand:
+    "block rounded-lg border border-[#154CB3]/30 px-3 py-2 text-sm font-semibold text-[#154CB3] hover:bg-[#154CB3]/10 transition-colors duration-200",
+  neutral:
+    "block rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition-colors duration-200",
+  amber:
+    "block rounded-lg border border-amber-300 px-3 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 transition-colors duration-200",
+  emerald:
+    "block rounded-lg border border-emerald-300 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 transition-colors duration-200",
+};
+
+const mobileRoleLinkClassByVariant: Record<RoleDashboardVariant, string> = {
+  danger:
+    "inline-flex items-center justify-center rounded-full border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors duration-200",
+  brand:
+    "inline-flex items-center justify-center rounded-full border border-[#154CB3]/30 bg-white px-3 py-2 text-sm font-semibold text-[#154CB3] hover:bg-[#154CB3]/10 transition-colors duration-200",
+  neutral:
+    "inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition-colors duration-200",
+  amber:
+    "inline-flex items-center justify-center rounded-full border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 transition-colors duration-200",
+  emerald:
+    "inline-flex items-center justify-center rounded-full border border-emerald-300 bg-white px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 transition-colors duration-200",
+};
+
+function dedupeRoleDashboardLinks(links: RoleDashboardLink[]): RoleDashboardLink[] {
+  const seenHrefs = new Set<string>();
+
+  return links.filter((link) => {
+    if (seenHrefs.has(link.href)) {
+      return false;
+    }
+
+    seenHrefs.add(link.href);
+    return true;
+  });
+}
+
 function NavigationBar() {
   const { session, userData, isLoading, signInWithGoogle, signOut } = useAuth();
   const router = useRouter();
@@ -121,19 +181,54 @@ function NavigationBar() {
     isCfo ||
     isFinanceOfficer ||
     accessibleServiceRoleDashboards.length > 0;
-  const roleDashboardLinks = [
+  const roleDashboardLinks = dedupeRoleDashboardLinks([
+    isMasterAdmin
+      ? { name: "Admin", href: "/masteradmin", variant: "danger" }
+      : null,
+    isOrganiser
+      ? { name: "Organiser", href: "/manage", variant: "brand" }
+      : null,
+    isStudentOrganiser
+      ? {
+          name: "Student Organiser Dashboard",
+          href: "/manage/student-organiser",
+          variant: "brand",
+        }
+      : null,
     canOpenHodDashboard
-      ? { name: "HOD Dashboard", href: "/manage/hod" }
+      ? { name: "HOD Dashboard", href: "/manage/hod", variant: "neutral" }
       : null,
     canOpenDeanDashboard
-      ? { name: "Dean Dashboard", href: "/manage/dean" }
+      ? { name: "Dean Dashboard", href: "/manage/dean", variant: "neutral" }
       : null,
     ...accessibleServiceRoleDashboards.map((roleConfig) => ({
       name: `${roleConfig.label} Dashboard`,
       href: `/manage/${roleConfig.slug}`,
+      variant: "neutral" as const,
     })),
-  ].filter((item): item is { name: string; href: string } => item !== null);
-  const hasRoleDashboardLinks = roleDashboardLinks.length > 0;
+    canOpenCfoDashboard
+      ? { name: "CFO Dashboard", href: "/manage/cfo", variant: "amber" }
+      : null,
+    canOpenFinanceDashboard
+      ? { name: "Finance Dashboard", href: "/manage/finance", variant: "emerald" }
+      : null,
+  ].filter((item): item is RoleDashboardLink => item !== null));
+  const shouldGroupRoleDashboards = roleDashboardLinks.length > 3;
+  const preferredInlineRoleDashboardLinks = roleDashboardLinks.filter(
+    (item) => item.href === "/masteradmin" || item.href === "/manage"
+  );
+  const fallbackInlineRoleDashboardLinks = roleDashboardLinks.slice(0, 2);
+  const inlineRoleDashboardLinks = shouldGroupRoleDashboards
+    ? preferredInlineRoleDashboardLinks.length > 0
+      ? preferredInlineRoleDashboardLinks
+      : fallbackInlineRoleDashboardLinks
+    : roleDashboardLinks;
+  const inlineRoleDashboardHrefSet = new Set(
+    inlineRoleDashboardLinks.map((item) => item.href)
+  );
+  const dropdownRoleDashboardLinks = shouldGroupRoleDashboards
+    ? roleDashboardLinks.filter((item) => !inlineRoleDashboardHrefSet.has(item.href))
+    : [];
 
   useEffect(() => {
     setAvatarLoadError(false);
@@ -229,6 +324,12 @@ function NavigationBar() {
       document.removeEventListener("mousedown", handleMouseDown);
     };
   }, [showRoleDashboardsDropdown]);
+
+  useEffect(() => {
+    if (!shouldGroupRoleDashboards && showRoleDashboardsDropdown) {
+      setShowRoleDashboardsDropdown(false);
+    }
+  }, [shouldGroupRoleDashboards, showRoleDashboardsDropdown]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -411,23 +512,17 @@ function NavigationBar() {
               userData && isManagementUser ? (
                 <div className="flex gap-2 sm:gap-4 items-center md:flex-nowrap justify-end">
                   <NotificationSystem />
-                  {!isDesktopCompact && isMasterAdmin && (
-                    <Link
-                      href="/masteradmin"
-                      className="inline-flex cursor-pointer font-semibold px-3 py-1.5 sm:px-4 sm:py-2 border-2 rounded-full text-xs sm:text-sm hover:bg-red-50 border-red-600 text-red-600 transition-all duration-200 ease-in-out"
-                    >
-                      Admin
-                    </Link>
-                  )}
-                  {!isDesktopCompact && isOrganiser && (
-                    <Link
-                      href="/manage"
-                      className="inline-flex cursor-pointer font-semibold px-3 py-1.5 sm:px-4 sm:py-2 border-2 rounded-full text-xs sm:text-sm hover:bg-[#f3f3f3] transition-all duration-200 ease-in-out"
-                    >
-                      Organiser
-                    </Link>
-                  )}
-                  {!isDesktopCompact && hasRoleDashboardLinks && (
+                  {!isDesktopCompact &&
+                    inlineRoleDashboardLinks.map((item) => (
+                      <Link
+                        key={`desktop-role-${item.href}`}
+                        href={item.href}
+                        className={desktopRoleLinkClassByVariant[item.variant]}
+                      >
+                        {item.name}
+                      </Link>
+                    ))}
+                  {!isDesktopCompact && shouldGroupRoleDashboards && (
                     <div ref={roleDashboardsDropdownRef} className="relative">
                       <button
                         type="button"
@@ -436,7 +531,7 @@ function NavigationBar() {
                         aria-haspopup="menu"
                         aria-expanded={showRoleDashboardsDropdown}
                       >
-                        Other dashboards
+                        Dashboards
                         <svg
                           className={`h-3.5 w-3.5 transition-transform duration-200 ${
                             showRoleDashboardsDropdown ? "rotate-180" : ""
@@ -452,7 +547,7 @@ function NavigationBar() {
 
                       {showRoleDashboardsDropdown && (
                         <div className="absolute right-0 top-full mt-2 w-52 rounded-xl border border-gray-200 bg-white shadow-lg z-30 py-1">
-                          {roleDashboardLinks.map((item) => (
+                          {dropdownRoleDashboardLinks.map((item) => (
                             <Link
                               key={item.href}
                               href={item.href}
@@ -465,22 +560,6 @@ function NavigationBar() {
                         </div>
                       )}
                     </div>
-                  )}
-                  {!isDesktopCompact && canOpenCfoDashboard && (
-                    <Link
-                      href="/manage/cfo"
-                      className="inline-flex cursor-pointer font-semibold px-3 py-1.5 sm:px-4 sm:py-2 border-2 rounded-full text-xs sm:text-sm border-amber-500 text-amber-700 hover:bg-amber-50 transition-all duration-200 ease-in-out"
-                    >
-                      CFO Dashboard
-                    </Link>
-                  )}
-                  {!isDesktopCompact && canOpenFinanceDashboard && (
-                    <Link
-                      href="/manage/finance"
-                      className="inline-flex cursor-pointer font-semibold px-3 py-1.5 sm:px-4 sm:py-2 border-2 rounded-full text-xs sm:text-sm border-emerald-600 text-emerald-700 hover:bg-emerald-50 transition-all duration-200 ease-in-out"
-                    >
-                      Finance Dashboard
-                    </Link>
                   )}
                   {/* CHANGED ORGANISED AND ADMIN BUTTON */}
                   <div className="relative">
@@ -718,27 +797,18 @@ function NavigationBar() {
                 </p>
 
                 <div className="mt-2 space-y-2">
-                  {isMasterAdmin && (
+                  {inlineRoleDashboardLinks.map((item) => (
                     <Link
-                      href="/masteradmin"
+                      key={`quick-action-${item.href}`}
+                      href={item.href}
                       onClick={closeDesktopMenu}
-                      className="block rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors duration-200"
+                      className={quickActionRoleLinkClassByVariant[item.variant]}
                     >
-                      Admin
+                      {item.name}
                     </Link>
-                  )}
+                  ))}
 
-                  {isOrganiser && (
-                    <Link
-                      href="/manage"
-                      onClick={closeDesktopMenu}
-                      className="block rounded-lg border border-[#154CB3]/30 px-3 py-2 text-sm font-semibold text-[#154CB3] hover:bg-[#154CB3]/10 transition-colors duration-200"
-                    >
-                      Organiser
-                    </Link>
-                  )}
-
-                  {hasRoleDashboardLinks && (
+                  {shouldGroupRoleDashboards && (
                     <div className="rounded-lg border border-slate-300 overflow-hidden">
                       <button
                         type="button"
@@ -747,7 +817,7 @@ function NavigationBar() {
                         aria-haspopup="menu"
                         aria-expanded={showRoleDashboardsDropdown}
                       >
-                        <span>Admin & Organizer</span>
+                        <span>Dashboards</span>
                         <svg
                           className={`h-4 w-4 transition-transform duration-200 ${
                             showRoleDashboardsDropdown ? "rotate-180" : ""
@@ -763,7 +833,7 @@ function NavigationBar() {
 
                       {showRoleDashboardsDropdown && (
                         <div className="border-t border-slate-200 bg-white">
-                          {roleDashboardLinks.map((item) => (
+                          {dropdownRoleDashboardLinks.map((item) => (
                             <Link
                               key={`quick-${item.href}`}
                               href={item.href}
@@ -776,26 +846,6 @@ function NavigationBar() {
                         </div>
                       )}
                     </div>
-                  )}
-
-                  {canOpenCfoDashboard && (
-                    <Link
-                      href="/manage/cfo"
-                      onClick={closeDesktopMenu}
-                      className="block rounded-lg border border-amber-300 px-3 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 transition-colors duration-200"
-                    >
-                      CFO Dashboard
-                    </Link>
-                  )}
-
-                  {canOpenFinanceDashboard && (
-                    <Link
-                      href="/manage/finance"
-                      onClick={closeDesktopMenu}
-                      className="block rounded-lg border border-emerald-300 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 transition-colors duration-200"
-                    >
-                      Finance Dashboard
-                    </Link>
                   )}
                 </div>
               </div>
@@ -831,25 +881,17 @@ function NavigationBar() {
               Fests
             </Link>
 
-            {isMasterAdmin && (
+            {inlineRoleDashboardLinks.map((item) => (
               <Link
-                href="/masteradmin"
-                className="inline-flex items-center justify-center rounded-full border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors duration-200"
+                key={`mobile-role-${item.href}`}
+                href={item.href}
+                className={mobileRoleLinkClassByVariant[item.variant]}
               >
-                Admin
+                {item.name}
               </Link>
-            )}
+            ))}
 
-            {isOrganiser && (
-              <Link
-                href="/manage"
-                className="inline-flex items-center justify-center rounded-full border border-[#154CB3]/30 bg-white px-3 py-2 text-sm font-semibold text-[#154CB3] hover:bg-[#154CB3]/10 transition-colors duration-200"
-              >
-                Organiser
-              </Link>
-            )}
-
-            {hasRoleDashboardLinks && (
+            {shouldGroupRoleDashboards && (
               <div className="col-span-2">
                 <button
                   type="button"
@@ -858,7 +900,7 @@ function NavigationBar() {
                   aria-haspopup="menu"
                   aria-expanded={showRoleDashboardsDropdown}
                 >
-                  Admin & Organizer
+                  Dashboards
                   <svg
                     className={`h-4 w-4 transition-transform duration-200 ${
                       showRoleDashboardsDropdown ? "rotate-180" : ""
@@ -874,7 +916,7 @@ function NavigationBar() {
 
                 {showRoleDashboardsDropdown && (
                   <div className="mt-2 space-y-2">
-                    {roleDashboardLinks.map((item) => (
+                    {dropdownRoleDashboardLinks.map((item) => (
                       <Link
                         key={`mobile-${item.href}`}
                         href={item.href}
@@ -887,24 +929,6 @@ function NavigationBar() {
                   </div>
                 )}
               </div>
-            )}
-
-            {canOpenCfoDashboard && (
-              <Link
-                href="/manage/cfo"
-                className="inline-flex items-center justify-center rounded-full border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 transition-colors duration-200"
-              >
-                CFO Dashboard
-              </Link>
-            )}
-
-            {canOpenFinanceDashboard && (
-              <Link
-                href="/manage/finance"
-                className="inline-flex items-center justify-center rounded-full border border-emerald-300 bg-white px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 transition-colors duration-200"
-              >
-                Finance Dashboard
-              </Link>
             )}
           </div>
         </div>
