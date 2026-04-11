@@ -176,6 +176,268 @@ const createTeacherApprovalRequestForChildEvent = async ({ eventRecord, userInfo
   }
 };
 
+const normalizeWorkflowStatus = (value, fallback = "") => {
+  const normalized = String(value || "").trim().toUpperCase();
+  return normalized || String(fallback || "").trim().toUpperCase();
+};
+
+const resolveActivationState = (approvalState, serviceState) => {
+  const normalizedApprovalState = normalizeWorkflowStatus(approvalState, "PENDING");
+  const normalizedServiceState = normalizeWorkflowStatus(serviceState, "APPROVED");
+
+  if (normalizedApprovalState === "REJECTED" || normalizedServiceState === "REJECTED") {
+    return "REJECTED";
+  }
+
+  if (normalizedApprovalState !== "APPROVED") {
+    return "PENDING";
+  }
+
+  if (normalizedServiceState === "PENDING") {
+    return "PENDING";
+  }
+
+  return "ACTIVE";
+};
+
+const isBudgetRelatedFromEventPayload = ({ claimsApplicable, registrationFee }) => {
+  const parsedFee = Number(registrationFee || 0);
+  return Boolean(claimsApplicable) || (Number.isFinite(parsedFee) && parsedFee > 0);
+};
+
+const findActiveApprovalRequestForEntity = async ({ entityType, entityRef }) => {
+  const normalizedEntityType = normalizeWorkflowStatus(entityType);
+  const normalizedEntityRef = String(entityRef || "").trim();
+
+  if (!normalizedEntityType || !normalizedEntityRef) {
+    return null;
+  }
+
+  try {
+    const rows = await queryAll("approval_requests", {
+      where: {
+        entity_type: normalizedEntityType,
+        entity_ref: normalizedEntityRef,
+      },
+      order: { column: "created_at", ascending: false },
+    });
+
+    return (
+      (rows || []).find((row) => {
+        const status = normalizeWorkflowStatus(row?.status);
+        return status === "UNDER_REVIEW" || status === "DRAFT" || status === "PENDING";
+      }) || null
+    );
+  } catch (error) {
+    const missingWorkflowColumns =
+      isMissingColumnError(error, "entity_type") ||
+      isMissingColumnError(error, "entity_ref") ||
+      isMissingColumnError(error, "status");
+
+    if (isMissingRelationError(error) || missingWorkflowColumns) {
+      return null;
+    }
+
+    throw error;
+  }
+};
+
+const createApprovalRequestWithSteps = async ({
+  entityType,
+  entityRef,
+  parentFestRef = null,
+  userInfo,
+  organizingDept = null,
+  campusHostedAt = null,
+  isBudgetRelated = false,
+  steps = [],
+}) => {
+  const normalizedEntityType = normalizeWorkflowStatus(entityType);
+  const normalizedEntityRef = String(entityRef || "").trim();
+
+  if (!normalizedEntityType || !normalizedEntityRef) {
+    return null;
+  }
+
+  const existingRequest = await findActiveApprovalRequestForEntity({
+    entityType: normalizedEntityType,
+    entityRef: normalizedEntityRef,
+  });
+
+  if (existingRequest) {
+    return existingRequest;
+  }
+
+  try {
+    const nowIso = new Date().toISOString();
+    const insertedRequest = await insert("approval_requests", [
+      {
+        request_id: `APR-${normalizedEntityType}-${normalizedEntityRef}-${Date.now()}`,
+        entity_type: normalizedEntityType,
+        entity_ref: normalizedEntityRef,
+        parent_fest_ref: parentFestRef,
+        requested_by_user_id: userInfo?.id || null,
+        requested_by_email: userInfo?.email || null,
+        organizing_dept: organizingDept,
+        campus_hosted_at: campusHostedAt,
+        is_budget_related: Boolean(isBudgetRelated),
+        status: "UNDER_REVIEW",
+        submitted_at: nowIso,
+      },
+    ]);
+
+    const approvalRequest = insertedRequest?.[0];
+    if (!approvalRequest) {
+      return null;
+    }
+
+    if (Array.isArray(steps) && steps.length > 0) {
+      await insert(
+        "approval_steps",
+        steps.map((step, index) => ({
+          approval_request_id: approvalRequest.id,
+          step_code: String(step?.stepCode || `STEP_${index + 1}`)
+            .trim()
+            .toUpperCase(),
+          role_code: normalizeWorkflowStatus(step?.roleCode),
+          step_group: Number(step?.stepGroup || index + 1),
+          sequence_order: Number(step?.sequenceOrder || index + 1),
+          required_count: Number(step?.requiredCount || 1),
+          status: "PENDING",
+        }))
+      );
+    }
+
+    return approvalRequest;
+  } catch (error) {
+    if (isMissingRelationError(error)) {
+      console.warn("[EventCreate] Approval workflow tables are not available yet; skipping approval request creation.");
+      return null;
+    }
+
+    if (String(error?.code || "") === "23505") {
+      return findActiveApprovalRequestForEntity({
+        entityType: normalizedEntityType,
+        entityRef: normalizedEntityRef,
+      });
+    }
+
+    throw error;
+  }
+};
+
+const createStandaloneApprovalRequestForEvent = async ({
+  eventRecord,
+  userInfo,
+  isBudgetRelated,
+}) => {
+  const eventId = String(eventRecord?.event_id || "").trim();
+  if (!eventId) {
+    return null;
+  }
+
+  const approvalSteps = [
+    {
+      stepCode: "DEAN",
+      roleCode: ROLE_CODES.DEAN,
+      stepGroup: 1,
+      sequenceOrder: 1,
+      requiredCount: 1,
+    },
+  ];
+
+  if (Boolean(isBudgetRelated)) {
+    approvalSteps.push({
+      stepCode: "CFO",
+      roleCode: ROLE_CODES.CFO,
+      stepGroup: 2,
+      sequenceOrder: 2,
+      requiredCount: 1,
+    });
+  }
+
+  return createApprovalRequestWithSteps({
+    entityType: "STANDALONE_EVENT",
+    entityRef: eventId,
+    parentFestRef: null,
+    userInfo,
+    organizingDept: eventRecord?.organizing_dept || null,
+    campusHostedAt: eventRecord?.campus_hosted_at || null,
+    isBudgetRelated: Boolean(isBudgetRelated),
+    steps: approvalSteps,
+  });
+};
+
+const applyEventWorkflowState = async ({
+  eventId,
+  approvalState,
+  serviceApprovalState,
+  approvalRequestId,
+  isBudgetRelated,
+}) => {
+  const normalizedEventId = String(eventId || "").trim();
+  if (!normalizedEventId) {
+    return {
+      applied: false,
+      activationState: "ACTIVE",
+      normalizedApprovalState: "APPROVED",
+      normalizedServiceState: "APPROVED",
+    };
+  }
+
+  const normalizedApprovalState = normalizeWorkflowStatus(approvalState, "APPROVED");
+  const normalizedServiceState = normalizeWorkflowStatus(serviceApprovalState, "APPROVED");
+  const activationState = resolveActivationState(
+    normalizedApprovalState,
+    normalizedServiceState
+  );
+
+  const workflowPayload = {
+    approval_state: normalizedApprovalState,
+    service_approval_state: normalizedServiceState,
+    activation_state: activationState,
+    is_draft: activationState !== "ACTIVE",
+    updated_at: new Date().toISOString(),
+  };
+
+  if (approvalRequestId !== undefined) {
+    workflowPayload.approval_request_id = approvalRequestId;
+  }
+
+  if (isBudgetRelated !== undefined) {
+    workflowPayload.is_budget_related = Boolean(isBudgetRelated);
+  }
+
+  try {
+    await update("events", workflowPayload, { event_id: normalizedEventId });
+    return {
+      applied: true,
+      activationState,
+      normalizedApprovalState,
+      normalizedServiceState,
+    };
+  } catch (error) {
+    const missingWorkflowColumns =
+      isMissingColumnError(error, "approval_state") ||
+      isMissingColumnError(error, "service_approval_state") ||
+      isMissingColumnError(error, "activation_state") ||
+      isMissingColumnError(error, "approval_request_id") ||
+      isMissingColumnError(error, "is_budget_related");
+
+    if (missingWorkflowColumns) {
+      console.warn("[EventWorkflow] Workflow state columns missing; skipping workflow-state persistence.");
+      return {
+        applied: false,
+        activationState,
+        normalizedApprovalState,
+        normalizedServiceState,
+      };
+    }
+
+    throw error;
+  }
+};
+
 const collectRequestedServiceRoleCodes = (additionalRequests = {}) => {
   const requestedRoleCodes = [];
 
@@ -1320,28 +1582,6 @@ router.post(
       const userIsOrganizerStudentOnly = isOrganizerStudentOnlyUser(req.userInfo);
       const normalizedFestId = normalizeFestReference(fest_id ?? fest);
 
-      if (userIsOrganizerStudentOnly && !normalizedFestId) {
-        return res.status(403).json({
-          error: "Organizer Student can only create events under an approved fest.",
-        });
-      }
-
-      if (userIsOrganizerStudentOnly) {
-        const parentFest = await queryFestById(normalizedFestId);
-
-        if (!parentFest) {
-          return res.status(404).json({
-            error: "Parent fest not found for Organizer Student submission.",
-          });
-        }
-
-        if (!isFestApprovedForChildEvent(parentFest)) {
-          return res.status(403).json({
-            error: "Organizer Student can only create events under an approved fest.",
-          });
-        }
-      }
-
       const shouldSaveAsDraftByInput =
         asBoolean(is_draft) ||
         asBoolean(save_as_draft);
@@ -1352,9 +1592,50 @@ router.post(
         send_notifications !== undefined &&
         send_notifications !== null &&
         String(send_notifications).trim() !== "";
-      const shouldSendNotifications =
+      const shouldSendNotificationsByPreference =
         !shouldSaveAsDraft &&
         (hasExplicitNotificationPreference ? asBoolean(send_notifications) : true);
+      const parsedRegistrationFee = parseOptionalFloat(registration_fee);
+      const claimsApplicable =
+        claims_applicable === "true" || claims_applicable === true;
+      const isStandaloneBudgetRelated = isBudgetRelatedFromEventPayload({
+        claimsApplicable,
+        registrationFee: parsedRegistrationFee,
+      });
+
+      let parentFest = null;
+      let childFestApproved = false;
+
+      if (normalizedFestId) {
+        parentFest = await queryFestById(normalizedFestId);
+
+        if (!parentFest) {
+          return res.status(404).json({
+            error: "Selected parent fest was not found.",
+          });
+        }
+
+        childFestApproved = isFestApprovedForChildEvent(parentFest);
+      }
+
+      if (userIsOrganizerStudentOnly && !normalizedFestId) {
+        return res.status(403).json({
+          error: "Organizer Student can only create events under an approved fest.",
+        });
+      }
+
+      if (userIsOrganizerStudentOnly && !childFestApproved) {
+        return res.status(403).json({
+          error: "Organizer Student can only create events under an approved fest.",
+        });
+      }
+
+      if (!shouldSaveAsDraft && normalizedFestId && !childFestApproved) {
+        return res.status(403).json({
+          error: "Events can be published under a fest only after the parent fest is approved.",
+        });
+      }
+
       const organizerEmailInput = normalizeSingleStringField(req.body.organizer_email || "");
       const fallbackOrganizerEmail = normalizeEmailAddress(req.userInfo?.email || "");
       const organizerEmail = normalizeEmailAddress(
@@ -1472,6 +1753,38 @@ router.post(
       const parsedAllowedCampuses = normalizeStringListField(
         req.body.allowed_campuses
       );
+      const userIsOrganizerStudentOnly = isOrganizerStudentOnlyUser(req.userInfo);
+
+      let parentFest = null;
+      let childFestApproved = false;
+      if (normalizedFestReference) {
+        parentFest = await queryFestById(normalizedFestReference);
+        if (!parentFest) {
+          return res.status(404).json({
+            error: "Selected parent fest was not found.",
+          });
+        }
+        childFestApproved = isFestApprovedForChildEvent(parentFest);
+      }
+
+      if (userIsOrganizerStudentOnly && !normalizedFestReference) {
+        return res.status(403).json({
+          error: "Organizer Student can only create or publish events under an approved fest.",
+        });
+      }
+
+      if (userIsOrganizerStudentOnly && !childFestApproved) {
+        return res.status(403).json({
+          error: "Organizer Student can only create or publish events under an approved fest.",
+        });
+      }
+
+      if (isPublishTransition && normalizedFestReference && !childFestApproved) {
+        return res.status(403).json({
+          error: "Events can be published under a fest only after the parent fest is approved.",
+        });
+      }
+
       const additionalRequestsValidation = validateAdditionalRequestsPayload({
         additionalRequestsRaw: req.body.additional_requests,
         hasFestSelected: Boolean(normalizedFestReference),
@@ -1548,8 +1861,8 @@ router.post(
         venue: venue || null,
         category: category || null,
         department_access: parsedDepartmentAccess,
-        claims_applicable: claims_applicable === "true" || claims_applicable === true,
-        registration_fee: parseOptionalFloat(registration_fee),
+        claims_applicable: claimsApplicable,
+        registration_fee: parsedRegistrationFee,
         participants_per_team: parseOptionalInt(max_participants, 1),
         event_image_url: uploadedFilePaths.image,
         banner_url: uploadedFilePaths.banner,
@@ -1610,46 +1923,39 @@ router.post(
       console.log("✅ Event inserted successfully:", event_id);
 
       const createdEventRecord = created[0];
-      let teacherApprovalRequest = null;
-      if (userIsOrganizerStudentOnly) {
-        teacherApprovalRequest = await createTeacherApprovalRequestForChildEvent({
+      let primaryApprovalRequest = null;
+      let approvalState = "APPROVED";
+      let pendingDeanApproval = false;
+      let pendingCfoApproval = false;
+
+      const queueTeacherApproval =
+        userIsOrganizerStudentOnly && Boolean(normalizedFestReference) && childFestApproved;
+      const queueStandaloneApproval =
+        !queueTeacherApproval &&
+        !shouldSaveAsDraft &&
+        !shouldArchiveOnCreate &&
+        !Boolean(normalizedFestReference);
+
+      if (queueTeacherApproval) {
+        primaryApprovalRequest = await createTeacherApprovalRequestForChildEvent({
           eventRecord: createdEventRecord,
           userInfo: req.userInfo,
         });
 
-        if (teacherApprovalRequest) {
-          try {
-            await update(
-              "events",
-              {
-                approval_state: "UNDER_REVIEW",
-                activation_state: "PENDING",
-                approval_request_id: teacherApprovalRequest.id,
-                approved_at: null,
-                approved_by: null,
-                rejected_at: null,
-                rejected_by: null,
-                rejection_reason: null,
-                updated_at: new Date().toISOString(),
-              },
-              { event_id }
-            );
-          } catch (workflowStateError) {
-            const code = String(workflowStateError?.code || "");
-            const message = String(workflowStateError?.message || "").toLowerCase();
-            const missingWorkflowColumns =
-              code === "42703" ||
-              (message.includes("column") &&
-                (message.includes("approval_state") ||
-                  message.includes("activation_state") ||
-                  message.includes("approval_request_id")));
+        if (primaryApprovalRequest) {
+          approvalState = "UNDER_REVIEW";
+        }
+      } else if (queueStandaloneApproval) {
+        primaryApprovalRequest = await createStandaloneApprovalRequestForEvent({
+          eventRecord: createdEventRecord,
+          userInfo: req.userInfo,
+          isBudgetRelated: isStandaloneBudgetRelated,
+        });
 
-            if (!missingWorkflowColumns) {
-              throw workflowStateError;
-            }
-
-            console.warn("[EventCreate] Workflow state columns missing; saved student submission as draft fallback.");
-          }
+        if (primaryApprovalRequest) {
+          approvalState = "UNDER_REVIEW";
+          pendingDeanApproval = true;
+          pendingCfoApproval = Boolean(isStandaloneBudgetRelated);
         }
       }
 
@@ -1657,33 +1963,36 @@ router.post(
         ? await createServiceRequestsForEvent({
             eventRecord: createdEventRecord,
             userInfo: req.userInfo,
-            approvalRequestId: teacherApprovalRequest?.id || null,
+            approvalRequestId: primaryApprovalRequest?.id || null,
           })
         : { createdCount: 0, requestedRoleCodes: [] };
 
-      if ((serviceWorkflow.requestedRoleCodes || []).length > 0) {
-        try {
-          await update(
-            "events",
-            {
-              service_approval_state: "PENDING",
-              activation_state: "PENDING",
-              updated_at: new Date().toISOString(),
-            },
-            { event_id }
-          );
-        } catch (serviceStateError) {
-          const missingServiceStateColumns =
-            isMissingColumnError(serviceStateError, "service_approval_state") ||
-            isMissingColumnError(serviceStateError, "activation_state");
+      const serviceApprovalState =
+        (serviceWorkflow.requestedRoleCodes || []).length > 0 ? "PENDING" : "APPROVED";
+      let activationState = resolveActivationState(approvalState, serviceApprovalState);
 
-          if (!missingServiceStateColumns) {
-            throw serviceStateError;
-          }
+      const shouldApplyWorkflowState =
+        Boolean(primaryApprovalRequest) ||
+        (serviceWorkflow.requestedRoleCodes || []).length > 0;
 
-          console.warn("[EventCreate] Service workflow state columns missing; skipping service state update.");
-        }
+      if (shouldApplyWorkflowState) {
+        const workflowResult = await applyEventWorkflowState({
+          eventId: event_id,
+          approvalState,
+          serviceApprovalState,
+          approvalRequestId: primaryApprovalRequest?.id || null,
+          isBudgetRelated: queueStandaloneApproval ? isStandaloneBudgetRelated : false,
+        });
+
+        activationState = workflowResult.activationState;
       }
+
+      const canGoLiveNow =
+        !shouldSaveAsDraft &&
+        !shouldArchiveOnCreate &&
+        activationState === "ACTIVE";
+      const shouldSendNotifications =
+        canGoLiveNow && shouldSendNotificationsByPreference;
 
       // Send notifications to all users about the new event (non-blocking)
       if (shouldSendNotifications) {
@@ -1704,7 +2013,7 @@ router.post(
       }
 
       // Push to UniversityGated if outsiders are enabled (non-blocking)
-      if (!shouldSaveAsDraft && !shouldArchiveOnCreate && isGatedEnabled()) {
+      if (canGoLiveNow && isGatedEnabled()) {
         const createdEvent = created[0];
         shouldPushEventToGated(createdEvent, queryOne).then(async (shouldPush) => {
           if (shouldPush) {
@@ -1724,16 +2033,29 @@ router.post(
         });
       }
 
+      let responseMessage = "Event created successfully";
+      if (queueTeacherApproval && primaryApprovalRequest) {
+        responseMessage = "Event submitted successfully and routed to Organizer Teacher approval";
+      } else if (pendingDeanApproval) {
+        responseMessage = pendingCfoApproval
+          ? "Event submitted successfully and routed to Dean and CFO approvals"
+          : "Event submitted successfully and routed to Dean approval";
+      } else if (!canGoLiveNow && (serviceWorkflow.createdCount || 0) > 0) {
+        responseMessage = "Event submitted successfully and routed for service approvals";
+      }
+
       return res.status(201).json({ 
-        message: userIsOrganizerStudentOnly
-          ? "Event submitted successfully and routed to Organizer Teacher approval"
-          : "Event created successfully", 
+        message: responseMessage,
         event_id,
         created_by: req.userInfo.email,
-        pending_teacher_review: userIsOrganizerStudentOnly,
-        approval_request_id: teacherApprovalRequest?.request_id || null,
+        pending_teacher_review: queueTeacherApproval && Boolean(primaryApprovalRequest),
+        pending_dean_review: pendingDeanApproval,
+        pending_cfo_review: pendingCfoApproval,
+        approval_request_id: primaryApprovalRequest?.request_id || null,
         pending_service_approvals: serviceWorkflow.createdCount || 0,
         pending_service_roles: serviceWorkflow.requestedRoleCodes || [],
+        activation_state: activationState,
+        is_live: canGoLiveNow,
       });
 
     } catch (error) {
@@ -2005,9 +2327,12 @@ router.put(
       const wasDraftBeforeUpdate = asBoolean(event?.is_draft);
       const isPublishTransition =
         hasDraftPreference && !shouldDraftFromRequest && wasDraftBeforeUpdate;
-      const shouldSendPublishNotifications =
+      let shouldSendPublishNotifications =
         isPublishTransition &&
         (hasExplicitNotificationPreference ? asBoolean(send_notifications) : true);
+      const parsedRegistrationFee = parseOptionalFloat(registration_fee);
+      const claimsApplicable =
+        claims_applicable === "true" || claims_applicable === true;
       const organizerEmailInput = normalizeSingleStringField(req.body.organizer_email || "");
       const resolvedOrganizerEmail = normalizeEmailAddress(
         organizerEmailInput || event?.organizer_email || req.userInfo?.email || ""
@@ -2182,8 +2507,8 @@ router.put(
         venue: venue || null,
         category: category || null,
         department_access: parsedDepartmentAccess,
-        claims_applicable: claims_applicable === "true" || claims_applicable === true,
-        registration_fee: parseOptionalFloat(registration_fee),
+        claims_applicable: claimsApplicable,
+        registration_fee: parsedRegistrationFee,
         participants_per_team: parseOptionalInt(max_participants, 1),
         event_image_url: uploadedFilePaths.image,
         banner_url: uploadedFilePaths.banner,
@@ -2303,50 +2628,93 @@ router.put(
         console.log(`  Saved PDF URL: ${updated[0].pdf_url}`);
       }
 
-      if (!updated || updated.length === 0) {
+      let updatedEvent = Array.isArray(updated) ? updated[0] : null;
+      if (!updatedEvent) {
         console.warn("⚠️ Update query returned no data, fetching event from database...");
-        try {
-          const refetchedEvent = await queryOne("events", { where: { event_id: eventId } });
-          if (!refetchedEvent) {
-            throw new Error("Could not fetch updated event after update");
-          }
-          console.log(`✅ Event updated and refetched successfully: ${eventId}`);
-          notifyPublishIfNeeded(refetchedEvent);
-          
-          // Push to UniversityGated if outsiders were enabled/changed (non-blocking)
-          if (isGatedEnabled() && !asBoolean(refetchedEvent?.is_draft)) {
-            shouldPushEventToGated(refetchedEvent, queryOne).then(async (shouldPush) => {
-              if (shouldPush) {
-                try {
-                  await pushEventToGated(
-                    refetchedEvent,
-                    req.userInfo?.email || req.body.organizer_email,
-                    req.userInfo?.name || 'SOCIO Organiser'
-                  );
-                  console.log(`✅ Pushed updated event "${refetchedEvent.title}" to UniversityGated`);
-                } catch (gatedError) {
-                  console.error(`❌ Failed to push updated event to Gated:`, gatedError.message);
-                }
-              }
-            }).catch((err) => {
-              console.error('❌ Error checking Gated push eligibility on update:', err.message);
-            });
-          }
+        updatedEvent = await queryOne("events", { where: { event_id: newEventId || eventId } });
+      }
 
-          return res.status(200).json({ 
-            message: "Event updated successfully", 
-            event: refetchedEvent,
-            event_id: newEventId,
-            id_changed: newEventId !== eventId
+      if (!updatedEvent) {
+        throw new Error("Event update failed - could not verify update");
+      }
+
+      let activationState = resolveActivationState(
+        updatedEvent?.approval_state,
+        updatedEvent?.service_approval_state
+      );
+      let workflowApprovalRequest = null;
+      let pendingDeanApproval = false;
+      let pendingCfoApproval = false;
+
+      if (isPublishTransition) {
+        const isStandalonePublish = !normalizedFestReference;
+        let nextApprovalState = normalizeWorkflowStatus(updatedEvent?.approval_state, "APPROVED");
+        let nextServiceState = normalizeWorkflowStatus(updatedEvent?.service_approval_state, "APPROVED");
+        let standaloneBudgetRelated = false;
+
+        if (userIsOrganizerStudentOnly && normalizedFestReference && childFestApproved) {
+          workflowApprovalRequest = await createTeacherApprovalRequestForChildEvent({
+            eventRecord: updatedEvent,
+            userInfo: req.userInfo,
           });
-        } catch (refetchError) {
-          console.error("❌ Failed to refetch event after update:", refetchError.message);
-          throw new Error("Event update failed - could not verify update");
+
+          if (workflowApprovalRequest) {
+            nextApprovalState = "UNDER_REVIEW";
+          }
+        } else if (isStandalonePublish) {
+          standaloneBudgetRelated = isBudgetRelatedFromEventPayload({
+            claimsApplicable,
+            registrationFee: parsedRegistrationFee,
+          });
+
+          workflowApprovalRequest = await createStandaloneApprovalRequestForEvent({
+            eventRecord: updatedEvent,
+            userInfo: req.userInfo,
+            isBudgetRelated: standaloneBudgetRelated,
+          });
+
+          if (workflowApprovalRequest) {
+            nextApprovalState = "UNDER_REVIEW";
+            pendingDeanApproval = true;
+            pendingCfoApproval = Boolean(standaloneBudgetRelated);
+          }
+        }
+
+        const serviceWorkflowOnPublish = await createServiceRequestsForEvent({
+          eventRecord: updatedEvent,
+          userInfo: req.userInfo,
+          approvalRequestId:
+            workflowApprovalRequest?.id || updatedEvent?.approval_request_id || null,
+        });
+
+        if ((serviceWorkflowOnPublish.requestedRoleCodes || []).length > 0) {
+          nextServiceState = "PENDING";
+        }
+
+        const workflowResult = await applyEventWorkflowState({
+          eventId: String(updatedEvent?.event_id || newEventId || eventId),
+          approvalState: nextApprovalState,
+          serviceApprovalState: nextServiceState,
+          approvalRequestId:
+            workflowApprovalRequest?.id || updatedEvent?.approval_request_id || null,
+          isBudgetRelated: isStandalonePublish ? standaloneBudgetRelated : false,
+        });
+
+        activationState = workflowResult.activationState;
+        shouldSendPublishNotifications =
+          shouldSendPublishNotifications && activationState === "ACTIVE";
+
+        if (workflowResult.applied) {
+          const refreshedEvent = await queryOne("events", {
+            where: { event_id: String(updatedEvent?.event_id || newEventId || eventId) },
+          });
+
+          if (refreshedEvent) {
+            updatedEvent = refreshedEvent;
+          }
         }
       }
 
-      // At this point, updated is guaranteed to have data (either from update or refetch)
-      const updatedEvent = updated[0];
       notifyPublishIfNeeded(updatedEvent);
 
       // Push to UniversityGated if outsiders were enabled/changed (non-blocking)
@@ -2369,11 +2737,25 @@ router.put(
         });
       }
 
+      let responseMessage = "Event updated successfully";
+      if (isPublishTransition && pendingDeanApproval) {
+        responseMessage = pendingCfoApproval
+          ? "Event submitted successfully and routed to Dean and CFO approvals"
+          : "Event submitted successfully and routed to Dean approval";
+      } else if (isPublishTransition && activationState !== "ACTIVE") {
+        responseMessage = "Event submitted successfully and routed for approval";
+      }
+
       return res.status(200).json({ 
-        message: "Event updated successfully", 
+        message: responseMessage,
         event: updatedEvent,
         event_id: newEventId,
-        id_changed: newEventId !== eventId
+        id_changed: newEventId !== eventId,
+        activation_state: activationState,
+        pending_dean_review: pendingDeanApproval,
+        pending_cfo_review: pendingCfoApproval,
+        approval_request_id: workflowApprovalRequest?.request_id || null,
+        is_live: activationState === "ACTIVE" && !asBoolean(updatedEvent?.is_draft),
       });
 
     } catch (error) {

@@ -1392,6 +1392,10 @@ export default function EventForm({
   const watchedMaxParticipants = useWatch({ control, name: "maxParticipants" });
   const watchedMinParticipants = useWatch({ control, name: "minParticipants" });
   const watchedFestEvent = useWatch({ control, name: "festEvent" });
+  const watchedProvideClaims = useWatch({
+    control,
+    name: "provideClaims",
+  });
   const watchedItEnabled = useWatch({
     control,
     name: "additionalRequests.it.enabled",

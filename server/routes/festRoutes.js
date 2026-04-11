@@ -13,6 +13,7 @@ import {
 import { sendBroadcastNotification } from "./notificationRoutes.js";
 import { pushFestToGated, isGatedEnabled } from "../utils/gatedSync.js";
 import { getFestTableForDatabase } from "../utils/festTableResolver.js";
+import { ROLE_CODES } from "../utils/roleAccessService.js";
 
 const router = express.Router();
 
@@ -53,6 +54,201 @@ const parseJsonLikeField = (value, fallbackValue) => {
   }
 
   return value;
+};
+
+const FEST_BUDGET_SETTINGS_KEY = "__budget_approval__";
+
+const normalizeWorkflowStatus = (value, fallback = "") => {
+  const normalized = String(value || "").trim().toUpperCase();
+  return normalized || String(fallback || "").trim().toUpperCase();
+};
+
+const extractBudgetApprovalRequirement = (customFieldsValue) => {
+  const parsedCustomFields = parseJsonLikeField(customFieldsValue, []);
+  if (!Array.isArray(parsedCustomFields)) {
+    return false;
+  }
+
+  const budgetField = parsedCustomFields.find((field) => {
+    if (!field || typeof field !== "object") {
+      return false;
+    }
+
+    return String(field.key || "").trim() === FEST_BUDGET_SETTINGS_KEY;
+  });
+
+  if (!budgetField || typeof budgetField !== "object") {
+    return false;
+  }
+
+  const fieldValue = budgetField.value;
+  if (!fieldValue || typeof fieldValue !== "object") {
+    return false;
+  }
+
+  return (
+    fieldValue.requiresBudgetApproval === true ||
+    String(fieldValue.requiresBudgetApproval || "").trim().toLowerCase() === "true"
+  );
+};
+
+const findActiveApprovalRequestForEntity = async ({ entityType, entityRef }) => {
+  const normalizedEntityType = normalizeWorkflowStatus(entityType);
+  const normalizedEntityRef = String(entityRef || "").trim();
+
+  if (!normalizedEntityType || !normalizedEntityRef) {
+    return null;
+  }
+
+  try {
+    const rows = await queryAll("approval_requests", {
+      where: {
+        entity_type: normalizedEntityType,
+        entity_ref: normalizedEntityRef,
+      },
+      order: { column: "created_at", ascending: false },
+    });
+
+    return (
+      (rows || []).find((row) => {
+        const status = normalizeWorkflowStatus(row?.status);
+        return status === "UNDER_REVIEW" || status === "DRAFT" || status === "PENDING";
+      }) || null
+    );
+  } catch (error) {
+    const missingWorkflowColumns =
+      isMissingColumnError(error) &&
+      (String(error?.message || "").toLowerCase().includes("entity_type") ||
+        String(error?.message || "").toLowerCase().includes("entity_ref"));
+
+    if (isMissingRelationError(error) || missingWorkflowColumns) {
+      return null;
+    }
+
+    throw error;
+  }
+};
+
+const createFestApprovalRequest = async ({ festRecord, userInfo, isBudgetRelated }) => {
+  const festId = String(festRecord?.fest_id || "").trim();
+  if (!festId) {
+    return null;
+  }
+
+  const existingRequest = await findActiveApprovalRequestForEntity({
+    entityType: "FEST",
+    entityRef: festId,
+  });
+
+  if (existingRequest) {
+    return existingRequest;
+  }
+
+  try {
+    const nowIso = new Date().toISOString();
+    const insertedRequest = await insert("approval_requests", [
+      {
+        request_id: `APR-FEST-${festId}-${Date.now()}`,
+        entity_type: "FEST",
+        entity_ref: festId,
+        parent_fest_ref: null,
+        requested_by_user_id: userInfo?.id || null,
+        requested_by_email: userInfo?.email || null,
+        organizing_dept: festRecord?.organizing_dept || null,
+        campus_hosted_at:
+          festRecord?.campus_hosted_at || festRecord?.department_hosted_at || null,
+        is_budget_related: Boolean(isBudgetRelated),
+        status: "UNDER_REVIEW",
+        submitted_at: nowIso,
+      },
+    ]);
+
+    const approvalRequest = insertedRequest?.[0];
+    if (!approvalRequest) {
+      return null;
+    }
+
+    const approvalSteps = [
+      {
+        approval_request_id: approvalRequest.id,
+        step_code: "DEAN",
+        role_code: ROLE_CODES.DEAN,
+        step_group: 1,
+        sequence_order: 1,
+        required_count: 1,
+        status: "PENDING",
+      },
+    ];
+
+    if (Boolean(isBudgetRelated)) {
+      approvalSteps.push({
+        approval_request_id: approvalRequest.id,
+        step_code: "CFO",
+        role_code: ROLE_CODES.CFO,
+        step_group: 2,
+        sequence_order: 2,
+        required_count: 1,
+        status: "PENDING",
+      });
+    }
+
+    await insert("approval_steps", approvalSteps);
+    return approvalRequest;
+  } catch (error) {
+    if (isMissingRelationError(error)) {
+      console.warn("[FestWorkflow] Approval tables are not available yet; skipping fest approval request creation.");
+      return null;
+    }
+
+    if (String(error?.code || "") === "23505") {
+      return findActiveApprovalRequestForEntity({
+        entityType: "FEST",
+        entityRef: festId,
+      });
+    }
+
+    throw error;
+  }
+};
+
+const applyFestWorkflowState = async ({ festTable, festId, approvalRequestId, isBudgetRelated }) => {
+  const normalizedFestId = String(festId || "").trim();
+  if (!normalizedFestId) {
+    return { applied: false, activationState: "ACTIVE" };
+  }
+
+  const workflowPayload = {
+    approval_state: "UNDER_REVIEW",
+    activation_state: "PENDING",
+    approval_request_id: approvalRequestId || null,
+    is_budget_related: Boolean(isBudgetRelated),
+    is_draft: true,
+    approved_at: null,
+    approved_by: null,
+    rejected_at: null,
+    rejected_by: null,
+    rejection_reason: null,
+    updated_at: new Date().toISOString(),
+  };
+
+  try {
+    await update(festTable, workflowPayload, { fest_id: normalizedFestId });
+    return { applied: true, activationState: "PENDING" };
+  } catch (error) {
+    const missingWorkflowColumns =
+      isMissingColumnError(error) &&
+      (String(error?.message || "").toLowerCase().includes("approval_state") ||
+        String(error?.message || "").toLowerCase().includes("activation_state") ||
+        String(error?.message || "").toLowerCase().includes("approval_request_id") ||
+        String(error?.message || "").toLowerCase().includes("is_budget_related"));
+
+    if (missingWorkflowColumns) {
+      console.warn("[FestWorkflow] Workflow columns missing on fest table; skipping workflow-state persistence.");
+      return { applied: false, activationState: "PENDING" };
+    }
+
+    throw error;
+  }
 };
 
 const parseComparableDate = (value) => {
@@ -733,6 +929,12 @@ router.post(
       const openingDateValue = festData.openingDate || festData.opening_date || null;
       const closingDateValue = festData.closingDate || festData.closing_date || null;
       const derivedStatus = deriveFestStatusFromDates(openingDateValue, closingDateValue, "upcoming");
+      const parsedCustomFields =
+        parseJsonLikeField(
+          pickDefined(festData.custom_fields, festData.customFields),
+          []
+        ) || [];
+      const isBudgetRelated = extractBudgetApprovalRequirement(parsedCustomFields);
 
       const festPayload = {
         fest_id,
@@ -757,10 +959,7 @@ router.post(
         sponsors: festData.sponsors || [],
         social_links: festData.social_links || [],
         faqs: festData.faqs || [],
-        custom_fields: parseJsonLikeField(
-          pickDefined(festData.custom_fields, festData.customFields),
-          []
-        ),
+        custom_fields: parsedCustomFields,
         campus_hosted_at: festData.campus_hosted_at || festData.campusHostedAt || null,
         allowed_campuses: festData.allowed_campuses || festData.allowedCampuses || [],
         department_hosted_at: festData.department_hosted_at || festData.departmentHostedAt || null,
@@ -769,7 +968,41 @@ router.post(
       };
 
       const inserted = await insert(festTable, [festPayload]);
-      const createdFest = inserted?.[0];
+      let createdFest = inserted?.[0];
+      let workflowApprovalRequest = null;
+      let activationState = "ACTIVE";
+      let shouldPublishNow = !shouldSaveAsDraft;
+
+      if (!shouldSaveAsDraft) {
+        workflowApprovalRequest = await createFestApprovalRequest({
+          festRecord: {
+            ...(createdFest || {}),
+            ...festPayload,
+            fest_id,
+          },
+          userInfo: req.userInfo,
+          isBudgetRelated,
+        });
+
+        if (workflowApprovalRequest) {
+          const workflowResult = await applyFestWorkflowState({
+            festTable,
+            festId: fest_id,
+            approvalRequestId: workflowApprovalRequest.id,
+            isBudgetRelated,
+          });
+
+          activationState = workflowResult.activationState;
+          shouldPublishNow = false;
+
+          if (workflowResult.applied) {
+            const refreshedFest = await queryOne(festTable, { where: { fest_id } });
+            if (refreshedFest) {
+              createdFest = refreshedFest;
+            }
+          }
+        }
+      }
 
       // Grant organiser access to event heads with expiration dates
       for (const head of normalizedEventHeads) {
@@ -794,7 +1027,7 @@ router.post(
       }
 
       // Send notifications to all users about the new fest (non-blocking)
-      if (shouldSendNotifications) {
+      if (shouldSendNotifications && shouldPublishNow) {
         sendBroadcastNotification({
           title: 'New Fest Announced',
           message: `${festPayload.fest_title} — Don't miss this fest!`,
@@ -810,7 +1043,7 @@ router.post(
       }
 
       // Push to UniversityGated if outsiders are enabled (non-blocking)
-      if (!shouldSaveAsDraft && isGatedEnabled() && festPayload.allow_outsiders) {
+      if (shouldPublishNow && isGatedEnabled() && festPayload.allow_outsiders) {
         pushFestToGated(
           festPayload,
           req.userInfo?.email || festPayload.created_by,
@@ -823,8 +1056,15 @@ router.post(
       }
 
       return res.status(201).json({
-        message: "Fest created successfully",
-        fest: mapFestResponse(createdFest)
+        message: workflowApprovalRequest
+          ? (isBudgetRelated
+              ? "Fest submitted successfully and routed to Dean and CFO approvals"
+              : "Fest submitted successfully and routed to Dean approval")
+          : "Fest created successfully",
+        fest: mapFestResponse(createdFest),
+        approval_request_id: workflowApprovalRequest?.request_id || null,
+        activation_state: activationState,
+        is_live: shouldPublishNow,
       });
 
     } catch (error) {
@@ -906,7 +1146,7 @@ router.put(
         String(sendNotificationsInput).trim() !== "";
       const wasDraftBeforeUpdate = asBoolean(existingFest?.is_draft);
       const isPublishTransition = hasDraftPreference && !shouldSaveAsDraft && wasDraftBeforeUpdate;
-      const shouldSendPublishNotifications =
+      let shouldSendPublishNotifications =
         isPublishTransition &&
         (hasExplicitNotificationPreference ? asBoolean(sendNotificationsInput) : true);
       const parsedEventHeadsInput =
@@ -1007,6 +1247,10 @@ router.put(
       const incomingImageUrl = 'festImageUrl' in updateData
         ? updateData.festImageUrl
         : ('fest_image_url' in updateData ? updateData.fest_image_url : undefined);
+      const parsedCustomFields = parseJsonLikeField(customFieldsInput, []);
+      const effectiveCustomFields =
+        parsedCustomFields === undefined ? existingFest.custom_fields : parsedCustomFields;
+      const isBudgetRelated = extractBudgetApprovalRequirement(effectiveCustomFields);
 
       console.log(`[Fest Update] Image URL received: ${JSON.stringify(incomingImageUrl)} (type: ${typeof incomingImageUrl})`);
       console.log(`[Fest Update] 'festImageUrl' in body: ${'festImageUrl' in updateData}`);
@@ -1023,7 +1267,7 @@ router.put(
         ["contact_phone", normalizedContactPhone],
         ["department_access", parseJsonLikeField(departmentAccessInput, [])],
         ["event_heads", hasEventHeadsUpdate ? normalizedEventHeadsInput : undefined],
-        ["custom_fields", parseJsonLikeField(customFieldsInput, [])],
+        ["custom_fields", parsedCustomFields],
         // New enhanced fest fields - parse JSON safely
         ["venue", updateData.venue],
         ["status", derivedStatus],
@@ -1106,10 +1350,50 @@ router.put(
         console.log(`✅ Fest updated successfully: ${festId}`);
       }
 
+      let workflowApprovalRequest = null;
+      let activationState = normalizeWorkflowStatus(updatedFest?.activation_state, "ACTIVE");
+      let pendingCfoApproval = false;
+
+      if (isPublishTransition) {
+        workflowApprovalRequest = await createFestApprovalRequest({
+          festRecord: {
+            ...(updatedFest || {}),
+            ...updatePayload,
+            fest_id: festId,
+          },
+          userInfo: req.userInfo,
+          isBudgetRelated,
+        });
+
+        if (workflowApprovalRequest) {
+          const workflowResult = await applyFestWorkflowState({
+            festTable,
+            festId,
+            approvalRequestId: workflowApprovalRequest.id,
+            isBudgetRelated,
+          });
+
+          activationState = workflowResult.activationState;
+          pendingCfoApproval = Boolean(isBudgetRelated);
+          shouldSendPublishNotifications = false;
+
+          if (workflowResult.applied) {
+            const refreshedFest = await queryOne(festTable, { where: { fest_id: festId } });
+            if (refreshedFest) {
+              updatedFest = refreshedFest;
+            }
+          }
+        }
+      }
+
+      const canPublishNow =
+        activationState === "ACTIVE" &&
+        !asBoolean(updatedFest?.is_draft);
+
       // Push to UniversityGated if outsiders are now enabled (non-blocking)
-      if (isGatedEnabled() && updatedFest) {
+      if (isGatedEnabled() && updatedFest && canPublishNow) {
         const outsidersEnabled = updatedFest.allow_outsiders === true || updatedFest.allow_outsiders === 'true';
-        if (outsidersEnabled && !asBoolean(updatedFest.is_draft)) {
+        if (outsidersEnabled) {
           pushFestToGated(
             updatedFest,
             req.userInfo?.email || updatedFest.created_by,
@@ -1122,7 +1406,7 @@ router.put(
         }
       }
 
-      if (shouldSendPublishNotifications) {
+      if (shouldSendPublishNotifications && canPublishNow) {
         sendBroadcastNotification({
           title: "Fest Published",
           message: `${updatedFest.fest_title} is now live!`,
@@ -1169,11 +1453,20 @@ router.put(
       }
 
       console.log(`[response] About to send success response for fest ${festId}`);
+      const responseMessage = workflowApprovalRequest
+        ? (pendingCfoApproval
+            ? "Fest submitted successfully and routed to Dean and CFO approvals"
+            : "Fest submitted successfully and routed to Dean approval")
+        : "Fest updated successfully";
+
       return res.status(200).json({
-        message: "Fest updated successfully",
+        message: responseMessage,
         fest: mapFestResponse(updatedFest),
         fest_id: festId,
-        id_changed: false
+        id_changed: false,
+        approval_request_id: workflowApprovalRequest?.request_id || null,
+        activation_state: activationState,
+        is_live: canPublishNow,
       });
 
     } catch (error) {

@@ -137,6 +137,8 @@ const syncApprovalOutcomeToEvent = async ({ approvalRequest, requestStatus, deci
       approval_state: normalizedRequestStatus,
       service_approval_state: serviceApprovalState,
       activation_state: resolveActivationState(normalizedRequestStatus, serviceApprovalState),
+      is_draft:
+        resolveActivationState(normalizedRequestStatus, serviceApprovalState) !== "ACTIVE",
       updated_at: nowIso,
     };
 
@@ -162,7 +164,8 @@ const syncApprovalOutcomeToEvent = async ({ approvalRequest, requestStatus, deci
       isMissingRelationError(error) ||
       isMissingColumnError(error, "approval_state") ||
       isMissingColumnError(error, "activation_state") ||
-      isMissingColumnError(error, "service_approval_state")
+      isMissingColumnError(error, "service_approval_state") ||
+      isMissingColumnError(error, "is_draft")
     ) {
       return;
     }
@@ -182,6 +185,8 @@ const syncApprovalOutcomeToFest = async ({ approvalRequest, requestStatus, decid
   const updates = {
     approval_state: normalizedRequestStatus,
     activation_state: normalizedRequestStatus === "APPROVED" ? "ACTIVE" : normalizedRequestStatus === "REJECTED" ? "REJECTED" : "PENDING",
+    is_draft:
+      (normalizedRequestStatus === "APPROVED" ? "ACTIVE" : normalizedRequestStatus === "REJECTED" ? "REJECTED" : "PENDING") !== "ACTIVE",
     updated_at: nowIso,
   };
 
@@ -220,7 +225,8 @@ const syncApprovalOutcomeToFest = async ({ approvalRequest, requestStatus, decid
 
       if (
         isMissingColumnError(error, "approval_state") ||
-        isMissingColumnError(error, "activation_state")
+        isMissingColumnError(error, "activation_state") ||
+        isMissingColumnError(error, "is_draft")
       ) {
         return;
       }
@@ -269,6 +275,8 @@ const syncServiceOutcomeToEvent = async ({ serviceRequest, decidedByEmail, comme
     const updates = {
       service_approval_state: serviceApprovalState,
       activation_state: resolveActivationState(currentApprovalState, serviceApprovalState),
+      is_draft:
+        resolveActivationState(currentApprovalState, serviceApprovalState) !== "ACTIVE",
       updated_at: nowIso,
     };
 
@@ -291,7 +299,8 @@ const syncServiceOutcomeToEvent = async ({ serviceRequest, decidedByEmail, comme
     if (
       isMissingRelationError(error) ||
       isMissingColumnError(error, "service_approval_state") ||
-      isMissingColumnError(error, "activation_state")
+      isMissingColumnError(error, "activation_state") ||
+      isMissingColumnError(error, "is_draft")
     ) {
       return;
     }

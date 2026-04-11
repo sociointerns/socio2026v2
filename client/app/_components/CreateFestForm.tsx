@@ -2793,7 +2793,7 @@ function CreateFestForm(props?: CreateFestProps) {
                       {formData.allowOutsiders && (
                         <div className="mt-4 pt-4 border-t border-gray-200">
                           <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg p-3">
-                            <strong>Note:</strong> Events under this fest will not need individual CSO approval — the fest-level approval covers all child events.
+                            <strong>Note:</strong> Events under an approved fest bypass standalone Dean/CFO approvals. Fest-level approval covers child-event governance.
                           </p>
                         </div>
                       )}

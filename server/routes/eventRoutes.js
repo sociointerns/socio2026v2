@@ -3,6 +3,7 @@ import {
   queryAll,
   queryOne,
   insert,
+  update,
   remove,
 } from "../config/database.js";
 import { multerUpload } from "../utils/multerConfig.js";
@@ -17,7 +18,15 @@ import {
   parseJsonField,
 } from "../utils/parsers.js";
 import { v4 as uuidv4 } from "uuid";
-import { authenticateUser, getUserInfo, requireMasterAdmin } from "../middleware/authMiddleware.js";
+
+import { ROLE_CODES } from "../utils/roleAccessService.js";
+// Import fest approval helpers for workflow logic
+import {
+  findActiveApprovalRequestForEntity,
+  createFestApprovalRequest,
+  applyFestWorkflowState,
+  extractBudgetApprovalRequirement,
+} from "./festRoutes.js";
 
 const router = express.Router();
 
@@ -237,6 +246,87 @@ router.post("/", multerUpload.fields([
         return res.status(500).json({ error: "Failed to upload files" });
       }
 
+
+      // ─── WORKFLOW: Approval Gating ─────────────────────────────
+      let approvalRequestId = null;
+      let approval_state = null;
+      let activation_state = null;
+      let is_budget_related = false;
+      let festApprovalInherited = false;
+
+      // Check if event is linked to a fest
+      const festId = eventData.fest_id || eventData.fest || null;
+      if (festId) {
+        // Try to inherit fest approval workflow if fest is under review
+        const festApproval = await findActiveApprovalRequestForEntity({ entityType: "FEST", entityRef: festId });
+        if (festApproval) {
+          approvalRequestId = festApproval.id;
+          approval_state = "UNDER_REVIEW";
+          activation_state = "PENDING";
+          festApprovalInherited = true;
+        }
+      }
+
+      // If not inherited, check if event itself needs approval (standalone or fest doesn't require approval)
+      if (!festApprovalInherited) {
+        // Determine if event requires budget approval (claims_applicable or custom_fields)
+        const claimsApplicable = eventData.claimsApplicable === "true" || eventData.claims_applicable === true;
+        // Check custom_fields for budget approval requirement
+        let customFields = Array.isArray(eventData.custom_fields)
+          ? eventData.custom_fields
+          : parseJsonField(eventData.custom_fields, []);
+        is_budget_related = claimsApplicable || (customFields && customFields.some(f => f.key === "__budget_approval__" && (f.value?.requiresBudgetApproval === true || String(f.value?.requiresBudgetApproval).toLowerCase() === "true")));
+
+        if (claimsApplicable || is_budget_related) {
+          // Create approval request for event (Dean, then CFO if budget)
+          // For simplicity, reuse fest approval helpers but with entityType EVENT
+          const nowIso = new Date().toISOString();
+          const insertedRequest = await insert("approval_requests", [{
+            request_id: `APR-EVENT-${event_id}-${Date.now()}`,
+            entity_type: "EVENT",
+            entity_ref: event_id,
+            parent_fest_ref: festId,
+            requested_by_user_id: req.user?.id || null,
+            requested_by_email: req.user?.email || null,
+            organizing_dept: eventData.organizingDept || null,
+            campus_hosted_at: eventData.campus_hosted_at || eventData.campusHostedAt || null,
+            is_budget_related: Boolean(is_budget_related),
+            status: "UNDER_REVIEW",
+            submitted_at: nowIso,
+          }]);
+          const approvalRequest = insertedRequest?.[0];
+          if (approvalRequest) {
+            approvalRequestId = approvalRequest.id;
+            approval_state = "UNDER_REVIEW";
+            activation_state = "PENDING";
+            // Insert approval steps
+            const approvalSteps = [
+              {
+                approval_request_id: approvalRequest.id,
+                step_code: "DEAN",
+                role_code: ROLE_CODES.DEAN,
+                step_group: 1,
+                sequence_order: 1,
+                required_count: 1,
+                status: "PENDING",
+              },
+            ];
+            if (is_budget_related) {
+              approvalSteps.push({
+                approval_request_id: approvalRequest.id,
+                step_code: "CFO",
+                role_code: ROLE_CODES.CFO,
+                step_group: 2,
+                sequence_order: 2,
+                required_count: 1,
+                status: "PENDING",
+              });
+            }
+            await insert("approval_steps", approvalSteps);
+          }
+        }
+      }
+
       // Prepare event payload
       const eventPayload = {
         event_id: event_id,
@@ -258,9 +348,8 @@ router.post("/", multerUpload.fields([
         organizer_phone: eventData.organizerPhone || "",
         whatsapp_invite_link: eventData.whatsappInviteLink || "",
         organizing_dept: eventData.organizingDept,
-        fest_id: eventData.fest_id || eventData.fest || null,
+        fest_id: festId,
         registration_deadline: eventData.registrationDeadline || null,
-        // Outsider registration fields
         allow_outsiders: eventData.allowOutsiders === "true" || eventData.allow_outsiders === true ? 1 : 0,
         outsider_registration_fee: parseOptionalFloat(eventData.outsiderRegistrationFee || eventData.outsider_registration_fee, null),
         outsider_max_participants: parseOptionalInt(eventData.outsiderMaxParticipants || eventData.outsider_max_participants, null),
@@ -285,7 +374,13 @@ router.post("/", multerUpload.fields([
         pdf_url: pdf_url,
         min_participants: parseOptionalInt(eventData.minParticipants || eventData.min_participants, 1),
         total_participants: 0,
-        created_by: eventData.createdBy || "admin"
+        created_by: eventData.createdBy || "admin",
+        // Approval workflow fields
+        approval_request_id: approvalRequestId,
+        approval_state: approval_state,
+        activation_state: activation_state,
+        is_budget_related: is_budget_related,
+        is_draft: approval_state === "UNDER_REVIEW" ? true : false,
       };
 
       const [createdEvent] = await insert("events", [eventPayload]);
@@ -310,7 +405,9 @@ router.post("/", multerUpload.fields([
       };
 
       return res.status(201).json({
-        message: "Event created successfully",
+        message: approval_state === "UNDER_REVIEW"
+          ? "Event created and sent for approval. Activation pending required approvals."
+          : "Event created successfully",
         event: responseEvent,
       });
 
