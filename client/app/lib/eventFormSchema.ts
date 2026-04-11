@@ -177,7 +177,10 @@ export const eventFormSchema = z
       .min(1, "At least one department is required"),
     organizingDept: z.string().min(1, "Organizing department is required"),
     category: z.string().min(1, "Category is required"),
-    festEvent: z.string().optional(),
+    festEvent: z
+      .string()
+      .trim()
+      .min(1, "Please select a fest option or None"),
     registrationDeadline: z.string().min(1, "Deadline is required"),
     location: z
       .string()

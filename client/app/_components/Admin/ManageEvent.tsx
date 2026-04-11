@@ -19,7 +19,6 @@ import {
   eventFormSchema,
   departments as departmentOptions,
   categories as categoryOptions,
-  festEvents as festEventOptions,
   christCampuses,
   additionalRequestsDefaultValues,
   predefinedVenues,
@@ -1153,7 +1152,7 @@ export default function EventForm({
       department: [],
       category: "",
       organizingDept: "",
-      festEvent: "none",
+      festEvent: "",
       registrationDeadline: "",
       location: "",
       registrationFee: "",
@@ -2299,10 +2298,18 @@ export default function EventForm({
                   <CustomDropdown
                     name="festEvent"
                     control={control}
-                    options={fetchedFests.length > 0 ? fetchedFests : [{ value: "none", label: "None" }]}
-                    placeholder="Select fest event (if any)"
-                    label="Is this event under any fest? (optional)"
+                    options={
+                      fetchedFests.length > 0
+                        ? fetchedFests
+                        : [{ value: "none", label: "None" }]
+                    }
+                    placeholder="Select fest or None"
+                    label="Is this event under any fest?"
                     error={errors.festEvent}
+                    required
+                    searchable
+                    searchPlaceholder="Type fest name to search"
+                    initialVisibleOptionCount={3}
                   />
                 </div>
 

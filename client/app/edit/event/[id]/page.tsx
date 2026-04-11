@@ -378,7 +378,7 @@ export default function EditEventPage() {
             department: parsedDepartments,
             category: data.category || "",
             organizingDept: data.organizing_dept || "",
-            festEvent: data.fest_id || data.fest || "none",
+            festEvent: data.fest_id || data.fest || "",
             registrationDeadline: data.registration_deadline
               ? dayjs(data.registration_deadline).format("YYYY-MM-DD")
               : "",

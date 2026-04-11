@@ -310,6 +310,9 @@ interface CustomDropdownProps {
   label?: string;
   error?: FieldError;
   required?: boolean;
+  searchable?: boolean;
+  searchPlaceholder?: string;
+  initialVisibleOptionCount?: number;
 }
 
 export function CustomDropdown({
@@ -320,8 +323,12 @@ export function CustomDropdown({
   label,
   error,
   required,
+  searchable = false,
+  searchPlaceholder = "Search options...",
+  initialVisibleOptionCount = 3,
 }: CustomDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -336,6 +343,12 @@ export function CustomDropdown({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (!isOpen && searchQuery) {
+      setSearchQuery("");
+    }
+  }, [isOpen, searchQuery]);
+
   return (
     <Controller
       name={name}
@@ -343,115 +356,137 @@ export function CustomDropdown({
       rules={{
         required: required ? `${label || placeholder} is required` : false,
       }}
-      render={({ field: { onChange, value } }) => (
-        <div className="relative w-full" ref={dropdownRef}>
-          {label && (
-            <label
-              htmlFor={name}
-              className="block mb-2 text-sm font-medium text-gray-700"
-            >
-              {label} {required && <span className="text-red-500">*</span>}
-            </label>
-          )}
-          <div
-            id={name}
-            className={`bg-white rounded-lg px-3 py-2 sm:px-4 sm:py-3 border ${
-              error ? "border-red-500" : "border-gray-300"
-            } transition-all hover:border-[#154CB3] cursor-pointer`}
-            onClick={() => setIsOpen(!isOpen)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") setIsOpen(!isOpen);
-            }}
-            role="button"
-            aria-haspopup="listbox"
-            aria-expanded={isOpen}
-            tabIndex={0}
-          >
-            <div className="flex items-center justify-between">
-              <span
-                className={`text-sm ${
-                  value ? "text-gray-900" : "text-gray-500"
-                } truncate max-w-[140px] sm:max-w-[160px]`}
+      render={({ field: { onChange, value } }) => {
+        const selectedValue = typeof value === "string" ? value : "";
+        const normalizedQuery = searchQuery.trim().toLowerCase();
+        const filteredOptions = searchable
+          ? normalizedQuery
+            ? options.filter((option) => {
+                const optionLabel = option.label.toLowerCase();
+                const optionValue = option.value.toLowerCase();
+                return (
+                  optionLabel.includes(normalizedQuery) ||
+                  optionValue.includes(normalizedQuery)
+                );
+              })
+            : options.slice(0, Math.max(1, initialVisibleOptionCount))
+          : options;
+
+        return (
+          <div className="relative w-full" ref={dropdownRef}>
+            {label && (
+              <label
+                htmlFor={name}
+                className="block mb-2 text-sm font-medium text-gray-700"
               >
-                {options.find((opt) => opt.value === value)?.label ||
-                  placeholder}
-              </span>
-              <svg
-                className={`h-4 w-4 text-[#154CB3] transform transition-transform ${
-                  isOpen ? "rotate-180" : ""
-                }`}
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                aria-hidden="true"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </div>
-          </div>
-          {isOpen && (
+                {label} {required && <span className="text-red-500">*</span>}
+              </label>
+            )}
             <div
-              className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-y-auto max-h-60"
-              role="listbox"
+              id={name}
+              className={`bg-white rounded-lg px-3 py-2 sm:px-4 sm:py-3 border ${
+                error ? "border-red-500" : "border-gray-300"
+              } transition-all hover:border-[#154CB3] cursor-pointer`}
+              onClick={() => setIsOpen(!isOpen)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") setIsOpen(!isOpen);
+              }}
+              role="button"
+              aria-haspopup="listbox"
+              aria-expanded={isOpen}
+              tabIndex={0}
             >
-              {placeholder === "Select fest event" && name === "festEvent" && (
-                <div
-                  className={`px-3 py-2 sm:px-4 sm:py-3 text-sm font-medium hover:bg-gray-100 cursor-pointer transition-colors ${
-                    !value ? "bg-blue-50 text-[#154CB3]" : "text-gray-900"
-                  }`}
-                  onClick={() => {
-                    onChange("");
-                    setIsOpen(false);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      onChange("");
-                      setIsOpen(false);
-                    }
-                  }}
-                  role="option"
-                  aria-selected={!value}
-                  tabIndex={0}
+              <div className="flex items-center justify-between">
+                <span
+                  className={`text-sm ${
+                    selectedValue ? "text-gray-900" : "text-gray-500"
+                  } truncate max-w-[140px] sm:max-w-[160px]`}
                 >
-                  {placeholder} (Clear selection)
-                </div>
-              )}
-              {options.map((option) => (
-                <div
-                  key={option.value}
-                  className={`px-3 py-2 sm:px-4 sm:py-3 text-sm font-medium hover:bg-gray-100 cursor-pointer transition-colors ${
-                    value === option.value
-                      ? "bg-blue-50 text-[#154CB3]"
-                      : "text-gray-900"
+                  {options.find((opt) => opt.value === selectedValue)?.label ||
+                    placeholder}
+                </span>
+                <svg
+                  className={`h-4 w-4 text-[#154CB3] transform transition-transform ${
+                    isOpen ? "rotate-180" : ""
                   }`}
-                  onClick={() => {
-                    onChange(option.value);
-                    setIsOpen(false);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </div>
+            </div>
+            {isOpen && (
+              <div
+                className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-y-auto max-h-60"
+                role="listbox"
+              >
+                {searchable && (
+                  <div className="sticky top-0 z-10 bg-white border-b border-gray-100 p-2">
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(event) => setSearchQuery(event.target.value)}
+                      placeholder={searchPlaceholder}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#154CB3] focus:border-transparent"
+                      autoComplete="off"
+                    />
+                  </div>
+                )}
+
+                {filteredOptions.length === 0 && (
+                  <div className="px-3 py-2 sm:px-4 sm:py-3 text-sm text-gray-500">
+                    No options found.
+                  </div>
+                )}
+
+                {filteredOptions.map((option) => (
+                  <div
+                    key={option.value}
+                    className={`px-3 py-2 sm:px-4 sm:py-3 text-sm font-medium hover:bg-gray-100 cursor-pointer transition-colors ${
+                      selectedValue === option.value
+                        ? "bg-blue-50 text-[#154CB3]"
+                        : "text-gray-900"
+                    }`}
+                    onClick={() => {
                       onChange(option.value);
                       setIsOpen(false);
-                    }
-                  }}
-                  role="option"
-                  aria-selected={value === option.value}
-                  tabIndex={0}
-                >
-                  {option.label}
-                </div>
-              ))}
-            </div>
-          )}
-          {error && (
-            <p className="text-red-500 text-xs mt-1">{error.message}</p>
-          )}
-        </div>
-      )}
+                      setSearchQuery("");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        onChange(option.value);
+                        setIsOpen(false);
+                        setSearchQuery("");
+                      }
+                    }}
+                    role="option"
+                    aria-selected={selectedValue === option.value}
+                    tabIndex={0}
+                  >
+                    {option.label}
+                  </div>
+                ))}
+
+                {searchable && !normalizedQuery && options.length > filteredOptions.length && (
+                  <div className="px-3 py-2 sm:px-4 text-xs text-gray-500 border-t border-gray-100">
+                    Type to search more options.
+                  </div>
+                )}
+              </div>
+            )}
+            {error && (
+              <p className="text-red-500 text-xs mt-1">{error.message}</p>
+            )}
+          </div>
+        );
+      }}
     />
   );
 }
