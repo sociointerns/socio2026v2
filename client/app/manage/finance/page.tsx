@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 
 import FinanceDashboardClient from "./_components/FinanceDashboardClient";
 import { fetchFinanceDashboardData } from "./_lib/financeDashboardData";
+import { hasAnyRoleCode } from "@/lib/roleDashboards";
+import { getCurrentUserProfileWithRoleCodes } from "@/lib/serverRoleProfile";
 
 export const dynamic = "force-dynamic";
 
@@ -28,34 +30,6 @@ async function createSupabaseServerClient() {
   });
 }
 
-async function getCurrentUserProfile(supabase: any, authUser: { id: string; email?: string | null }) {
-  const byAuthUuid = await supabase
-    .from("users")
-    .select("*")
-    .eq("auth_uuid", authUser.id)
-    .maybeSingle();
-
-  if (!byAuthUuid.error && byAuthUuid.data) {
-    return byAuthUuid.data as Record<string, unknown>;
-  }
-
-  if (!authUser.email) {
-    return null;
-  }
-
-  const byEmail = await supabase
-    .from("users")
-    .select("*")
-    .eq("email", authUser.email)
-    .maybeSingle();
-
-  if (byEmail.error || !byEmail.data) {
-    return null;
-  }
-
-  return byEmail.data as Record<string, unknown>;
-}
-
 export default async function FinanceManagePage() {
   if (!hasSupabaseConfig()) {
     return (
@@ -77,7 +51,7 @@ export default async function FinanceManagePage() {
     redirect("/auth");
   }
 
-  const userProfile = await getCurrentUserProfile(supabase, {
+  const userProfile = await getCurrentUserProfileWithRoleCodes(supabase, {
     id: user.id,
     email: user.email,
   });
@@ -89,7 +63,9 @@ export default async function FinanceManagePage() {
   const universityRole = String(userProfile.university_role || "").toLowerCase().trim();
   const isMasterAdmin = Boolean(userProfile.is_masteradmin);
   const isFinanceOfficer =
-    universityRole === "finance_officer" || Boolean((userProfile as any).is_finance_officer);
+    hasAnyRoleCode(userProfile, ["ACCOUNTS"]) ||
+    universityRole === "finance_officer" ||
+    Boolean((userProfile as any).is_finance_officer);
   if (!isFinanceOfficer && !isMasterAdmin) {
     redirect("/manage");
   }

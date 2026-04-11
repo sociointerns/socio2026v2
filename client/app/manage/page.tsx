@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import {
   getAccessibleServiceRoleDashboards,
+  hasAnyRoleCode,
   hasRoleAlias,
 } from "@/lib/roleDashboards";
 
@@ -452,28 +453,47 @@ export default function ManageDashboard() {
   // Auth Context & Session
   const [authToken, setAuthToken] = useState<string | null>(null);
   const { userData, isMasterAdmin } = useAuth();
-  const isOrganiser = Boolean(userData?.is_organiser);
+  const userRecord = (userData as Record<string, unknown> | null) || null;
+  const isOrganiser =
+    Boolean(userData?.is_organiser) || hasAnyRoleCode(userRecord, ["ORGANIZER_TEACHER"]);
   const universityRole = (userData as any)?.university_role;
-  const isStudentOrganiser = hasRoleAlias(universityRole, ["student organiser", "student_organiser"]);
-  const isHod = Boolean((userData as any)?.is_hod) || hasRoleAlias(universityRole, ["hod"]);
-  const isDean = Boolean((userData as any)?.is_dean) || hasRoleAlias(universityRole, ["dean"]);
-  const isCfo = Boolean((userData as any)?.is_cfo) || hasRoleAlias(universityRole, ["cfo"]);
+  const isStudentOrganiser =
+    hasAnyRoleCode(userRecord, ["ORGANIZER_STUDENT"]) ||
+    hasRoleAlias(universityRole, ["student organiser", "student_organiser"]);
+  const isVolunteer =
+    Boolean((userData as any)?.is_volunteer) ||
+    hasAnyRoleCode(userRecord, ["ORGANIZER_VOLUNTEER"]) ||
+    hasRoleAlias(universityRole, ["volunteer"]);
+  const isHod =
+    Boolean((userData as any)?.is_hod) ||
+    hasAnyRoleCode(userRecord, ["HOD"]) ||
+    hasRoleAlias(universityRole, ["hod"]);
+  const isDean =
+    Boolean((userData as any)?.is_dean) ||
+    hasAnyRoleCode(userRecord, ["DEAN"]) ||
+    hasRoleAlias(universityRole, ["dean"]);
+  const isCfo =
+    Boolean((userData as any)?.is_cfo) ||
+    hasAnyRoleCode(userRecord, ["CFO"]) ||
+    hasRoleAlias(universityRole, ["cfo"]);
   const isFinanceOfficer =
     Boolean((userData as any)?.is_finance_officer) ||
+    hasAnyRoleCode(userRecord, ["ACCOUNTS"]) ||
     hasRoleAlias(universityRole, ["finance officer", "finance_officer"]);
   const accessibleServiceRoleDashboards = useMemo(
     () =>
       getAccessibleServiceRoleDashboards(
-        (userData as Record<string, unknown> | null) || null,
+        userRecord,
         isMasterAdmin
       ),
-    [userData, isMasterAdmin]
+    [userRecord, isMasterAdmin]
   );
   const canOpenHodDashboard = isHod || isMasterAdmin;
   const canOpenDeanDashboard = isDean || isMasterAdmin;
   const canOpenCfoDashboard = isCfo || isMasterAdmin;
   const canOpenStudentOrganiserDashboard = isStudentOrganiser || isMasterAdmin;
   const canOpenFinanceDashboard = isFinanceOfficer || isMasterAdmin;
+  const canOpenVolunteerDashboard = isVolunteer || isMasterAdmin;
   
   // Fests Data
   const [fests, setFests] = useState<Fest[]>([]);
@@ -510,6 +530,11 @@ export default function ManageDashboard() {
       return;
     }
 
+    if (isVolunteer) {
+      router.replace("/execution/volunteer");
+      return;
+    }
+
     if (isHod) {
       router.replace("/manage/hod");
       return;
@@ -538,6 +563,7 @@ export default function ManageDashboard() {
     isMasterAdmin,
     isOrganiser,
     isStudentOrganiser,
+    isVolunteer,
     isHod,
     isDean,
     isCfo,
@@ -1419,12 +1445,13 @@ export default function ManageDashboard() {
           canOpenDeanDashboard ||
           canOpenCfoDashboard ||
           canOpenStudentOrganiserDashboard ||
+          canOpenVolunteerDashboard ||
           canOpenFinanceDashboard ||
           accessibleServiceRoleDashboards.length > 0) && (
           <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Approval Dashboards</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Role Dashboards</p>
             <p className="mt-1 text-sm text-slate-600">
-              Role-based approval queues are available below.
+              Role-based approval and execution dashboards are available below.
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-3">
               {canOpenHodDashboard && (
@@ -1457,6 +1484,14 @@ export default function ManageDashboard() {
                   className="inline-flex items-center gap-2 rounded-full border border-blue-300 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-800 transition-colors hover:bg-blue-100"
                 >
                   Open Student Organiser Dashboard <ArrowRight className="h-4 w-4" />
+                </Link>
+              )}
+              {canOpenVolunteerDashboard && (
+                <Link
+                  href="/execution/volunteer"
+                  className="inline-flex items-center gap-2 rounded-full border border-violet-300 bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-800 transition-colors hover:bg-violet-100"
+                >
+                  Open Volunteer Dashboard <ArrowRight className="h-4 w-4" />
                 </Link>
               )}
               {canOpenFinanceDashboard && (

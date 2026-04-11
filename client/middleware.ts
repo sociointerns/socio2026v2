@@ -3,11 +3,77 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import {
   SERVICE_ROLE_DASHBOARDS,
+  hasAnyRoleCode,
   hasRoleAlias,
   hasServiceRoleAccess,
 } from "./lib/roleDashboards";
 
 const publicPaths = ["/", "/auth/callback", "/error", "/about", "/auth", "/events", "/event/*", "/fests", "/fest/*", "/clubs", "/club/*", "/Discover", "/contact", "/faq", "/privacy", "/terms", "/cookies", "/pricing", "/solutions", "/support", "/support/*", "/about/*", "/app-download", "/prototype-website", "/prototype-website/*"];
+
+function normalizeRoleCode(value: unknown): string {
+  return String(value || "").trim().toUpperCase();
+}
+
+function getActiveRoleCodesFromAssignments(
+  assignments: Array<Record<string, unknown>>,
+  nowDate: Date = new Date()
+): string[] {
+  const now = nowDate.getTime();
+
+  const activeCodes = assignments
+    .filter((assignment) => {
+      if (!assignment || assignment.is_active === false) {
+        return false;
+      }
+
+      const validFrom = assignment.valid_from
+        ? new Date(String(assignment.valid_from)).getTime()
+        : null;
+      const validUntil = assignment.valid_until
+        ? new Date(String(assignment.valid_until)).getTime()
+        : null;
+
+      if (Number.isFinite(validFrom) && (validFrom as number) > now) {
+        return false;
+      }
+
+      if (Number.isFinite(validUntil) && (validUntil as number) <= now) {
+        return false;
+      }
+
+      return true;
+    })
+    .map((assignment) => normalizeRoleCode(assignment.role_code))
+    .filter((roleCode) => roleCode.length > 0);
+
+  return Array.from(new Set(activeCodes));
+}
+
+function mergeUserDataWithAssignmentRoleCodes(
+  userData: Record<string, unknown> | null,
+  assignments: Array<Record<string, unknown>>
+): Record<string, unknown> | null {
+  if (!userData) {
+    return userData;
+  }
+
+  const existingRoleCodes = Array.isArray(userData.role_codes)
+    ? userData.role_codes
+        .map((roleCode) => normalizeRoleCode(roleCode))
+        .filter((roleCode) => roleCode.length > 0)
+    : [];
+  const assignmentRoleCodes = getActiveRoleCodesFromAssignments(assignments);
+  const roleCodes = Array.from(new Set([...existingRoleCodes, ...assignmentRoleCodes]));
+
+  if (roleCodes.length === 0) {
+    return userData;
+  }
+
+  return {
+    ...userData,
+    role_codes: roleCodes,
+  };
+}
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -102,43 +168,71 @@ export async function middleware(req: NextRequest) {
       .single();
 
     const normalizedUserData = (userData as Record<string, unknown> | null) || null;
-    const universityRole = normalizedUserData?.university_role;
+    let roleAssignments: Array<Record<string, unknown>> = [];
+
+    if (normalizedUserData?.id) {
+      const { data: roleAssignmentsData, error: roleAssignmentsError } = await supabase
+        .from("user_role_assignments")
+        .select("role_code,is_active,valid_from,valid_until")
+        .eq("user_id", normalizedUserData.id);
+
+      if (!roleAssignmentsError && Array.isArray(roleAssignmentsData)) {
+        roleAssignments = roleAssignmentsData as Array<Record<string, unknown>>;
+      }
+    }
+
+    const resolvedUserData = mergeUserDataWithAssignmentRoleCodes(
+      normalizedUserData,
+      roleAssignments
+    );
+    const universityRole = resolvedUserData?.university_role;
+    const isMasterAdmin =
+      Boolean(userData?.is_masteradmin) || hasAnyRoleCode(resolvedUserData, ["MASTER_ADMIN"]);
+    const isOrganiser =
+      Boolean(userData?.is_organiser) || hasAnyRoleCode(resolvedUserData, ["ORGANIZER_TEACHER"]);
+    const isHod =
+      Boolean((userData as any)?.is_hod) ||
+      hasAnyRoleCode(resolvedUserData, ["HOD"]) ||
+      hasRoleAlias(universityRole, ["hod"]);
+    const isDean =
+      Boolean((userData as any)?.is_dean) ||
+      hasAnyRoleCode(resolvedUserData, ["DEAN"]) ||
+      hasRoleAlias(universityRole, ["dean"]);
+    const isCfo =
+      Boolean((userData as any)?.is_cfo) ||
+      hasAnyRoleCode(resolvedUserData, ["CFO"]) ||
+      hasRoleAlias(universityRole, ["cfo"]);
+    const isStudentOrganiser =
+      hasAnyRoleCode(resolvedUserData, ["ORGANIZER_STUDENT"]) ||
+      hasRoleAlias(universityRole, ["student organiser", "student_organiser"]);
+    const isFinanceOfficer =
+      Boolean((userData as any)?.is_finance_officer) ||
+      hasAnyRoleCode(resolvedUserData, ["ACCOUNTS"]) ||
+      hasRoleAlias(universityRole, ["finance officer", "finance_officer"]);
     const hasServiceRole = SERVICE_ROLE_DASHBOARDS.some((roleConfig) =>
-      hasServiceRoleAccess(normalizedUserData, roleConfig)
+      hasServiceRoleAccess(resolvedUserData, roleConfig)
     );
     const canManage =
-      Boolean(userData?.is_masteradmin) ||
-      Boolean(userData?.is_organiser) ||
-      Boolean((userData as any)?.is_hod) ||
-      Boolean((userData as any)?.is_dean) ||
-      Boolean((userData as any)?.is_cfo) ||
-      Boolean((userData as any)?.is_finance_officer) ||
-      hasRoleAlias(universityRole, ["cfo"]) ||
-      hasRoleAlias(universityRole, ["student organiser", "student_organiser"]) ||
-      hasRoleAlias(universityRole, ["finance officer", "finance_officer"]) ||
+      isMasterAdmin ||
+      isOrganiser ||
+      isHod ||
+      isDean ||
+      isCfo ||
+      isStudentOrganiser ||
+      isFinanceOfficer ||
       hasServiceRole;
     const canAccessHodRoute =
-      Boolean(userData?.is_masteradmin) ||
-      Boolean((userData as any)?.is_hod) ||
-      hasRoleAlias(universityRole, ["hod"]);
+      isMasterAdmin || isHod;
     const canAccessDeanRoute =
-      Boolean(userData?.is_masteradmin) ||
-      Boolean((userData as any)?.is_dean) ||
-      hasRoleAlias(universityRole, ["dean"]);
+      isMasterAdmin || isDean;
     const canAccessCfoRoute =
-      Boolean(userData?.is_masteradmin) ||
-      Boolean((userData as any)?.is_cfo) ||
-      hasRoleAlias(universityRole, ["cfo"]);
+      isMasterAdmin || isCfo;
     const canAccessStudentOrganiserRoute =
-      Boolean(userData?.is_masteradmin) ||
-      hasRoleAlias(universityRole, ["student organiser", "student_organiser"]);
+      isMasterAdmin || isStudentOrganiser;
     const canAccessFinanceRoute =
-      Boolean(userData?.is_masteradmin) ||
-      Boolean((userData as any)?.is_finance_officer) ||
-      hasRoleAlias(universityRole, ["finance officer", "finance_officer"]);
+      isMasterAdmin || isFinanceOfficer;
     const canAccessServiceRoleRoute = matchedServiceRoleRoute
-      ? Boolean(userData?.is_masteradmin) ||
-        hasServiceRoleAccess(normalizedUserData, matchedServiceRoleRoute)
+      ? isMasterAdmin || hasServiceRoleAccess(resolvedUserData, matchedServiceRoleRoute)
       : true;
 
     if (isHodManagementRoute && (error || !userData || !canAccessHodRoute)) {

@@ -9,7 +9,8 @@
     "dev": "nodemon index.js",
     "migration:up": "node scripts/migrate.js up",
     "migration:status": "node scripts/migrate.js status",
-    "migration:create": "node scripts/migrate.js create"
+    "migration:create": "node scripts/migrate.js create",
+    "seed:department-school": "node scripts/seed-department-school.js"
   },
   "keywords": [],
   "author": "",
@@ -31,7 +32,8 @@
     "pg": "^8.18.0",
     "qrcode": "^1.5.4",
     "resend": "^6.10.0",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"

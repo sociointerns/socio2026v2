@@ -8,6 +8,7 @@ import { NotificationSystem } from "./NotificationSystem";
 import TermsConsentModal from "./TermsConsentModal";
 import {
   getAccessibleServiceRoleDashboards,
+  hasAnyRoleCode,
   hasRoleAlias,
 } from "@/lib/roleDashboards";
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from "react";
@@ -155,26 +156,42 @@ function NavigationBar() {
   const displayName = userData?.name || sessionDisplayName;
   const displayAvatar = userData?.avatar_url || session?.user?.user_metadata?.avatar_url || null;
   const avatarInitial = (displayName || "U").charAt(0).toUpperCase();
-  const isMasterAdmin = Boolean((userData as any)?.is_masteradmin);
-  const isOrganiser = Boolean(userData?.is_organiser);
-  const isSupport = Boolean(userData?.is_support) || hasRoleAlias((userData as any)?.university_role, ["support"]);
+  const userRecord = (userData as Record<string, unknown> | null) || null;
+  const isMasterAdmin =
+    Boolean((userData as any)?.is_masteradmin) || hasAnyRoleCode(userRecord, ["MASTER_ADMIN"]);
+  const isOrganiser =
+    Boolean(userData?.is_organiser) || hasAnyRoleCode(userRecord, ["ORGANIZER_TEACHER"]);
+  const isSupport =
+    Boolean(userData?.is_support) ||
+    hasAnyRoleCode(userRecord, ["SUPPORT"]) ||
+    hasRoleAlias((userData as any)?.university_role, ["support"]);
   const universityRole = (userData as any)?.university_role;
-  const isHod = Boolean((userData as any)?.is_hod) || hasRoleAlias(universityRole, ["hod"]);
-  const isDean = Boolean((userData as any)?.is_dean) || hasRoleAlias(universityRole, ["dean"]);
-  const isCfo = Boolean((userData as any)?.is_cfo) || hasRoleAlias(universityRole, ["cfo"]);
-  const isStudentOrganiser = hasRoleAlias(universityRole, ["student organiser", "student_organiser"]);
+  const isHod =
+    Boolean((userData as any)?.is_hod) ||
+    hasAnyRoleCode(userRecord, ["HOD"]) ||
+    hasRoleAlias(universityRole, ["hod"]);
+  const isDean =
+    Boolean((userData as any)?.is_dean) ||
+    hasAnyRoleCode(userRecord, ["DEAN"]) ||
+    hasRoleAlias(universityRole, ["dean"]);
+  const isCfo =
+    Boolean((userData as any)?.is_cfo) ||
+    hasAnyRoleCode(userRecord, ["CFO"]) ||
+    hasRoleAlias(universityRole, ["cfo"]);
+  const isStudentOrganiser =
+    hasAnyRoleCode(userRecord, ["ORGANIZER_STUDENT"]) ||
+    hasRoleAlias(universityRole, ["student organiser", "student_organiser"]);
   const isVolunteer =
-    Boolean((userData as any)?.is_volunteer) || hasRoleAlias(universityRole, ["volunteer"]);
+    Boolean((userData as any)?.is_volunteer) ||
+    hasAnyRoleCode(userRecord, ["ORGANIZER_VOLUNTEER"]) ||
+    hasRoleAlias(universityRole, ["volunteer"]);
   const isFinanceOfficer =
     Boolean((userData as any)?.is_finance_officer) ||
+    hasAnyRoleCode(userRecord, ["ACCOUNTS"]) ||
     hasRoleAlias(universityRole, ["finance officer", "finance_officer"]);
-  const accessibleServiceRoleDashboards = useMemo(
-    () =>
-      getAccessibleServiceRoleDashboards(
-        (userData as Record<string, unknown> | null) || null,
-        isMasterAdmin
-      ),
-    [userData, isMasterAdmin]
+  const accessibleServiceRoleDashboards = getAccessibleServiceRoleDashboards(
+    userRecord,
+    isMasterAdmin
   );
   const canOpenManageDashboard = isOrganiser || isMasterAdmin;
   const canOpenHodDashboard = isHod || isMasterAdmin;
@@ -182,7 +199,7 @@ function NavigationBar() {
   const canOpenCfoDashboard = isCfo || isMasterAdmin;
   const canOpenStudentOrganiserDashboard = isStudentOrganiser || isMasterAdmin;
   const canOpenFinanceDashboard = isFinanceOfficer || isMasterAdmin;
-  const canOpenVolunteerDashboard = isVolunteer;
+  const canOpenVolunteerDashboard = isVolunteer || isMasterAdmin;
   const canOpenSupportDashboard = isSupport;
   const isManagementUser =
     isMasterAdmin ||
@@ -250,21 +267,22 @@ function NavigationBar() {
         ].filter((item): item is RoleDashboardLink => item !== null)
       );
 
-      const roleDashboardDisplayPriorityOrder = [
-        "/manage",
-        "/masteradmin",
-        "/manage/cfo",
-        "/manage/finance",
-        "/manage/dean",
-        "/manage/hod",
-        "/manage/student-organiser",
-        "/execution/volunteer",
-        "/manage/stalls-misc",
-        "/manage/it",
-        "/manage/venue",
-        "/manage/catering-vendors",
-        "/support/inbox",
-      ];
+  const roleDashboardDisplayPriorityOrder = [
+    "/masteradmin",
+    "/manage/cfo",
+    "/manage/finance",
+    "/manage/dean",
+    "/manage/hod",
+    "/manage",
+    "/manage/student-organiser",
+    "/execution/volunteer",
+    "/manage/stalls-misc",
+    "/manage/security",
+    "/manage/it",
+    "/manage/venue",
+    "/manage/catering-vendors",
+    "/support/inbox",
+  ];
 
       const roleDashboardDisplayPriority = new Map(
         roleDashboardDisplayPriorityOrder.map((href, index) => [href, index])

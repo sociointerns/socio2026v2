@@ -26,7 +26,11 @@ type UserData = {
   is_masteradmin: boolean;
   is_hod?: boolean;
   is_dean?: boolean;
+  is_cfo?: boolean;
+  is_finance_officer?: boolean;
+  is_volunteer?: boolean;
   university_role?: string | null;
+  role_codes?: string[];
   department_id?: string | null;
   school_id?: string | null;
   organiser_expires_at?: string | null;
@@ -344,6 +348,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return null;
       }
       const data = await response.json();
+      const normalizedRoleCodes = Array.isArray(data.user?.role_codes)
+        ? Array.from(
+            new Set(
+              data.user.role_codes
+                .map((roleCode: unknown) => String(roleCode || "").trim().toUpperCase())
+                .filter((roleCode: string) => roleCode.length > 0)
+            )
+          )
+        : [];
+
       const user = {
         ...data.user,
         is_organiser: Boolean(data.user?.is_organiser),
@@ -351,9 +365,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         is_masteradmin: Boolean(data.user?.is_masteradmin),
         is_hod: Boolean(data.user?.is_hod),
         is_dean: Boolean(data.user?.is_dean),
+        is_cfo: Boolean(data.user?.is_cfo),
+        is_finance_officer: Boolean(data.user?.is_finance_officer),
+        is_volunteer: Boolean(data.user?.is_volunteer),
         university_role: data.user?.university_role
           ? String(data.user.university_role).toLowerCase().trim()
           : null,
+        role_codes: normalizedRoleCodes,
       };
       setUserData(user);
       return user;

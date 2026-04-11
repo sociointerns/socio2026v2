@@ -10,6 +10,12 @@ import {
 } from "../middleware/authMiddleware.js";
 import { sendWelcomeEmail } from "../utils/emailService.js";
 import { getFestTableForDatabase } from "../utils/festTableResolver.js";
+import {
+  combineRoleCodes,
+  deriveFallbackRoleCodesFromAssignments,
+  deriveLegacyFlagsFromRoleCodes,
+  deriveRoleCodesFromUserRecord,
+} from "../utils/roleAccessService.js";
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -17,6 +23,7 @@ const supabase = createClient(
 );
 
 const router = express.Router();
+const ROLE_ASSIGNMENTS_TABLE = "user_role_assignments";
 
 const VALID_CAMPUSES = [
   'Central Campus (Main)',
@@ -26,6 +33,18 @@ const VALID_CAMPUSES = [
   'Delhi NCR Campus',
   'Pune Lavasa Campus'
 ];
+
+function isMissingRoleAssignmentsTableError(error) {
+  const code = String(error?.code || "").toUpperCase();
+  const message = String(error?.message || "").toLowerCase();
+
+  return (
+    code === "42P01" ||
+    code === "PGRST205" ||
+    (message.includes("relation") && message.includes("does not exist")) ||
+    (message.includes("could not find") && message.includes("schema cache"))
+  );
+}
 
 // Get all users with optional search and role filter (master admin only)
 router.get(
@@ -186,7 +205,35 @@ router.get("/:email", async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    return res.status(200).json({ user });
+    const roleCodesFromUserRecord = deriveRoleCodesFromUserRecord(user);
+    let assignmentFallbackRoleCodes = [];
+
+    if (user.id) {
+      try {
+        const roleAssignments = await queryAll(ROLE_ASSIGNMENTS_TABLE, {
+          where: { user_id: user.id },
+          order: { column: "created_at", ascending: false },
+        });
+
+        assignmentFallbackRoleCodes = deriveFallbackRoleCodesFromAssignments(
+          Array.isArray(roleAssignments) ? roleAssignments : []
+        );
+      } catch (roleAssignmentError) {
+        if (!isMissingRoleAssignmentsTableError(roleAssignmentError)) {
+          throw roleAssignmentError;
+        }
+      }
+    }
+
+    const roleCodes = combineRoleCodes(roleCodesFromUserRecord, assignmentFallbackRoleCodes);
+    const legacyRoleFlags = deriveLegacyFlagsFromRoleCodes(roleCodes, user);
+    const enrichedUser = {
+      ...user,
+      ...legacyRoleFlags,
+      role_codes: roleCodes,
+    };
+
+    return res.status(200).json({ user: enrichedUser });
   } catch (error) {
     console.error("Error fetching user:", error);
     return res.status(500).json({ error: "Internal server error" });

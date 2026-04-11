@@ -6,6 +6,7 @@ import {
   getServiceRoleConfigBySlug,
   hasServiceRoleAccess,
 } from "@/lib/roleDashboards";
+import { getCurrentUserProfileWithRoleCodes } from "@/lib/serverRoleProfile";
 
 type DecisionAction = "approve" | "reject" | "return";
 
@@ -66,34 +67,6 @@ async function buildSupabaseServerClient() {
   });
 }
 
-async function getCurrentUserProfile(supabase: any, authUser: { id: string; email?: string | null }) {
-  const byAuthUuid = await supabase
-    .from("users")
-    .select("*")
-    .eq("auth_uuid", authUser.id)
-    .maybeSingle();
-
-  if (!byAuthUuid.error && byAuthUuid.data) {
-    return byAuthUuid.data as Record<string, unknown>;
-  }
-
-  if (!authUser.email) {
-    return null;
-  }
-
-  const byEmail = await supabase
-    .from("users")
-    .select("*")
-    .eq("email", authUser.email)
-    .maybeSingle();
-
-  if (byEmail.error || !byEmail.data) {
-    return null;
-  }
-
-  return byEmail.data as Record<string, unknown>;
-}
-
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ role: string; requestId: string }> }
@@ -124,7 +97,7 @@ export async function PATCH(
       return jsonError(401, "Authentication required.");
     }
 
-    const userProfile = await getCurrentUserProfile(supabase, {
+    const userProfile = await getCurrentUserProfileWithRoleCodes(supabase, {
       id: user.id,
       email: user.email,
     });

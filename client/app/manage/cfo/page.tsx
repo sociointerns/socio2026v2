@@ -4,7 +4,8 @@ import { redirect } from "next/navigation";
 
 import CfoDashboardClient from "./_components/CfoDashboardClient";
 import { fetchCfoDashboardData } from "./_lib/cfoDashboardData";
-import { hasRoleAlias } from "@/lib/roleDashboards";
+import { hasAnyRoleCode, hasRoleAlias } from "@/lib/roleDashboards";
+import { getCurrentUserProfileWithRoleCodes } from "@/lib/serverRoleProfile";
 
 export const dynamic = "force-dynamic";
 
@@ -29,34 +30,6 @@ async function buildSupabaseServerClient() {
       },
     },
   });
-}
-
-async function getCurrentUserProfile(supabase: any, authUser: { id: string; email?: string | null }) {
-  const byAuthUuid = await supabase
-    .from("users")
-    .select("*")
-    .eq("auth_uuid", authUser.id)
-    .maybeSingle();
-
-  if (!byAuthUuid.error && byAuthUuid.data) {
-    return byAuthUuid.data as Record<string, unknown>;
-  }
-
-  if (!authUser.email) {
-    return null;
-  }
-
-  const byEmail = await supabase
-    .from("users")
-    .select("*")
-    .eq("email", authUser.email)
-    .maybeSingle();
-
-  if (byEmail.error || !byEmail.data) {
-    return null;
-  }
-
-  return byEmail.data as Record<string, unknown>;
 }
 
 async function resolveL2Threshold(supabase: any, campusName: string): Promise<number> {
@@ -99,7 +72,7 @@ export default async function CfoManagePage() {
     redirect("/auth");
   }
 
-  const userProfile = await getCurrentUserProfile(supabase, {
+  const userProfile = await getCurrentUserProfileWithRoleCodes(supabase, {
     id: user.id,
     email: user.email,
   });
@@ -110,7 +83,10 @@ export default async function CfoManagePage() {
 
   const universityRole = String(userProfile.university_role || "").toLowerCase().trim();
   const isMasterAdmin = Boolean(userProfile.is_masteradmin);
-  const isCfo = Boolean(userProfile.is_cfo) || hasRoleAlias(universityRole, ["cfo"]);
+  const isCfo =
+    hasAnyRoleCode(userProfile, ["CFO"]) ||
+    Boolean(userProfile.is_cfo) ||
+    hasRoleAlias(universityRole, ["cfo"]);
 
   if (!isMasterAdmin && !isCfo) {
     redirect("/manage");

@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 
 import DeanDashboardClient from "./_components/DeanDashboardClient";
 import { fetchDeanDashboardData } from "./_lib/deanDashboardData";
+import { hasAnyRoleCode } from "@/lib/roleDashboards";
+import { getCurrentUserProfileWithRoleCodes } from "@/lib/serverRoleProfile";
 
 export const dynamic = "force-dynamic";
 
@@ -28,34 +30,6 @@ async function buildSupabaseServerClient() {
       },
     },
   });
-}
-
-async function getCurrentUserProfile(supabase: any, authUser: { id: string; email?: string | null }) {
-  const byAuthUuid = await supabase
-    .from("users")
-    .select("*")
-    .eq("auth_uuid", authUser.id)
-    .maybeSingle();
-
-  if (!byAuthUuid.error && byAuthUuid.data) {
-    return byAuthUuid.data as Record<string, unknown>;
-  }
-
-  if (!authUser.email) {
-    return null;
-  }
-
-  const byEmail = await supabase
-    .from("users")
-    .select("*")
-    .eq("email", authUser.email)
-    .maybeSingle();
-
-  if (byEmail.error || !byEmail.data) {
-    return null;
-  }
-
-  return byEmail.data as Record<string, unknown>;
 }
 
 async function resolveL1Threshold(supabase: any, campusName: string): Promise<number> {
@@ -98,7 +72,7 @@ export default async function DeanManagePage() {
     redirect("/auth");
   }
 
-  const userProfile = await getCurrentUserProfile(supabase, {
+  const userProfile = await getCurrentUserProfileWithRoleCodes(supabase, {
     id: user.id,
     email: user.email,
   });
@@ -109,7 +83,10 @@ export default async function DeanManagePage() {
 
   const universityRole = String(userProfile.university_role || "").toLowerCase().trim();
   const isMasterAdmin = Boolean(userProfile.is_masteradmin);
-  const isDeanUser = Boolean(userProfile.is_dean) || universityRole === "dean";
+  const isDeanUser =
+    hasAnyRoleCode(userProfile, ["DEAN"]) ||
+    Boolean(userProfile.is_dean) ||
+    universityRole === "dean";
   if (!isDeanUser && !isMasterAdmin) {
     redirect("/manage");
   }

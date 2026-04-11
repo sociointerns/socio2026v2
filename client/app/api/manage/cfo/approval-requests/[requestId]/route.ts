@@ -1,6 +1,8 @@
 ﻿import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
+import { hasAnyRoleCode } from "@/lib/roleDashboards";
+import { getCurrentUserProfileWithRoleCodes } from "@/lib/serverRoleProfile";
 
 type DecisionAction = "approve" | "reject" | "return";
 
@@ -62,34 +64,6 @@ async function buildSupabaseServerClient() {
   });
 }
 
-async function getCurrentUserProfile(supabase: any, authUser: { id: string; email?: string | null }) {
-  const byAuthUuid = await supabase
-    .from("users")
-    .select("*")
-    .eq("auth_uuid", authUser.id)
-    .maybeSingle();
-
-  if (!byAuthUuid.error && byAuthUuid.data) {
-    return byAuthUuid.data as Record<string, unknown>;
-  }
-
-  if (!authUser.email) {
-    return null;
-  }
-
-  const byEmail = await supabase
-    .from("users")
-    .select("*")
-    .eq("email", authUser.email)
-    .maybeSingle();
-
-  if (byEmail.error || !byEmail.data) {
-    return null;
-  }
-
-  return byEmail.data as Record<string, unknown>;
-}
-
 async function resolveL2Threshold(supabase: any, campusName: string): Promise<number> {
   const fallbackThreshold = 100000;
   if (!campusName) {
@@ -135,7 +109,7 @@ export async function PATCH(
       return jsonError(401, "Authentication required.");
     }
 
-    const userProfile = await getCurrentUserProfile(supabase, {
+    const userProfile = await getCurrentUserProfileWithRoleCodes(supabase, {
       id: user.id,
       email: user.email,
     });
@@ -146,7 +120,10 @@ export async function PATCH(
 
     const universityRole = String(userProfile.university_role || "").toLowerCase().trim();
     const isMasterAdmin = Boolean(userProfile.is_masteradmin);
-    const isCfo = Boolean(userProfile.is_cfo) || universityRole === "cfo";
+    const isCfo =
+      hasAnyRoleCode(userProfile, ["CFO"]) ||
+      Boolean(userProfile.is_cfo) ||
+      universityRole === "cfo";
     if (!isMasterAdmin && !isCfo) {
       return jsonError(403, "Only CFO or Master Admin users can perform L3 actions.");
     }

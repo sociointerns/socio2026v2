@@ -3,6 +3,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
+import { hasAnyRoleCode } from "@/lib/roleDashboards";
+import { getCurrentUserProfileWithRoleCodes } from "@/lib/serverRoleProfile";
 
 import { FinanceActionResult, FinanceApprovalAction } from "./types";
 
@@ -108,25 +110,10 @@ async function resolveFinanceSession() {
     };
   }
 
-  const byAuthUuid = await supabase
-    .from("users")
-    .select("*")
-    .eq("auth_uuid", user.id)
-    .maybeSingle();
-
-  let profile = !byAuthUuid.error && byAuthUuid.data ? byAuthUuid.data : null;
-
-  if (!profile && user.email) {
-    const byEmail = await supabase
-      .from("users")
-      .select("*")
-      .eq("email", user.email)
-      .maybeSingle();
-
-    if (!byEmail.error && byEmail.data) {
-      profile = byEmail.data;
-    }
-  }
+  const profile = await getCurrentUserProfileWithRoleCodes(supabase, {
+    id: user.id,
+    email: user.email,
+  });
 
   if (!profile) {
     return {
@@ -142,7 +129,9 @@ async function resolveFinanceSession() {
   const universityRole = normalizeLower(profileRecord.university_role);
   const isMasterAdmin = Boolean(profileRecord.is_masteradmin);
   const isFinanceOfficer =
-    universityRole === "finance_officer" || Boolean(profileRecord.is_finance_officer);
+    hasAnyRoleCode(profileRecord, ["ACCOUNTS"]) ||
+    universityRole === "finance_officer" ||
+    Boolean(profileRecord.is_finance_officer);
   if (!isFinanceOfficer && !isMasterAdmin) {
     return {
       ok: false as const,

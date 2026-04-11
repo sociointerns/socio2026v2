@@ -1,6 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { hasAnyRoleCode } from "@/lib/roleDashboards";
+import { getCurrentUserProfileWithRoleCodes } from "@/lib/serverRoleProfile";
 
 type ActionType = "save_logistics" | "save_runsheet" | "save_post_event" | "finalize_attendance";
 
@@ -179,34 +181,6 @@ async function buildSupabaseServerClient() {
   });
 }
 
-async function getCurrentUserProfile(supabase: any, authUser: { id: string; email?: string | null }) {
-  const byAuthUuid = await supabase
-    .from("users")
-    .select("*")
-    .eq("auth_uuid", authUser.id)
-    .maybeSingle();
-
-  if (!byAuthUuid.error && byAuthUuid.data) {
-    return byAuthUuid.data as GenericRecord;
-  }
-
-  if (!authUser.email) {
-    return null;
-  }
-
-  const byEmail = await supabase
-    .from("users")
-    .select("*")
-    .eq("email", authUser.email)
-    .maybeSingle();
-
-  if (byEmail.error || !byEmail.data) {
-    return null;
-  }
-
-  return byEmail.data as GenericRecord;
-}
-
 async function fetchEventForUpdate(supabase: any, eventId: string): Promise<GenericRecord | null> {
   for (const selectClause of EVENT_SELECT_CANDIDATES) {
     const { data, error } = await supabase
@@ -303,7 +277,7 @@ export async function PATCH(
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }
 
-  const userProfile = await getCurrentUserProfile(supabase, {
+  const userProfile = await getCurrentUserProfileWithRoleCodes(supabase, {
     id: user.id,
     email: user.email,
   });
@@ -314,7 +288,11 @@ export async function PATCH(
 
   const universityRole = normalizeLower(userProfile.university_role);
   const isMasterAdmin = Boolean(userProfile.is_masteradmin);
-  if (universityRole !== "student_organiser" && !isMasterAdmin) {
+  const isStudentOrganiser =
+    hasAnyRoleCode(userProfile, ["ORGANIZER_STUDENT"]) ||
+    universityRole === "student_organiser";
+
+  if (!isStudentOrganiser && !isMasterAdmin) {
     return NextResponse.json(
       { error: "Only Student Organisers or Master Admins can update this dashboard." },
       { status: 403 }
