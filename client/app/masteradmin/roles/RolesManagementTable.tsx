@@ -69,11 +69,26 @@ const formatCurrency = (value: number) => {
   }).format(value);
 };
 
+<<<<<<< Updated upstream
 const sameUserId = (left: string | number, right: string | number) => String(left) === String(right);
 
 function isRoleEnabled(access: UserAccessPayload, role: MatrixRole): boolean {
   if (role === "organiser") {
     return access.is_organiser;
+=======
+function normalizeRoleKey(
+  rawRole: string | null,
+  flags: { is_hod: boolean; is_dean: boolean; is_cfo: boolean; is_finance_officer: boolean }
+): "hod" | "dean" | "cfo" | "finance_officer" | null {
+  const normalized = String(rawRole || "").trim().toLowerCase();
+  if (
+    normalized === "hod" ||
+    normalized === "dean" ||
+    normalized === "cfo" ||
+    normalized === "finance_officer"
+  ) {
+    return normalized;
+>>>>>>> Stashed changes
   }
 
   if (role === "volunteer") {
@@ -112,6 +127,7 @@ function domainModeFromRole(role: MatrixRole): DomainScopeMode {
     return "dean";
   }
 
+<<<<<<< Updated upstream
   if (role === "cfo") {
     return "cfo";
   }
@@ -236,6 +252,14 @@ function domainValueForRole(access: UserAccessPayload, role: MatrixRole): string
 
   if (role === "venue_manager") {
     return access.venue_id;
+=======
+  if (flags.is_cfo) {
+    return "cfo";
+  }
+
+  if (flags.is_finance_officer) {
+    return "finance_officer";
+>>>>>>> Stashed changes
   }
 
   return null;
@@ -261,6 +285,7 @@ function hasScopeOptions(data: RolesPageData, role: MatrixRole): boolean {
   return true;
 }
 
+<<<<<<< Updated upstream
 function resolveDomainSummary(user: UserRoleRow, data: RolesPageData): string {
   if (user.access.is_hod && user.access.department_id) {
     const department = data.departments.find((item) => item.id === user.access.department_id);
@@ -309,6 +334,21 @@ function ToggleCell({
       </span>
     </label>
   );
+=======
+function assignmentFromUser(user: UserRoleRow): AssignmentDraft {
+  const roleKey = normalizeRoleKey(user.university_role, {
+    is_hod: user.is_hod,
+    is_dean: user.is_dean,
+    is_cfo: user.is_cfo,
+    is_finance_officer: user.is_finance_officer,
+  });
+  const role = roleKeyToAssignable(roleKey);
+
+  return {
+    role,
+    domainId: null,
+  };
+>>>>>>> Stashed changes
 }
 
 export default function RolesManagementTable({ initialData }: RolesManagementTableProps) {
@@ -336,12 +376,45 @@ export default function RolesManagementTable({ initialData }: RolesManagementTab
     });
   }, [users, searchText]);
 
+<<<<<<< Updated upstream
   const runAccessUpdate = (user: UserRoleRow, nextAccess: UserAccessPayload, successMessage: string) => {
     setPendingUpdateUserId(user.id);
 
     startTransition(async () => {
       const response = await updateUserAccess(user.id, nextAccess);
       setPendingUpdateUserId(null);
+=======
+  const beginEdit = (user: UserRoleRow) => {
+    setEditingUserId(user.id);
+    setDraft(assignmentFromUser(user));
+  };
+
+  const cancelEdit = () => {
+    setEditingUserId(null);
+    setDraft(null);
+  };
+
+  const handleRoleChange = (nextRole: AssignableRole) => {
+    setDraft((previous) => {
+      if (!previous) {
+        return previous;
+      }
+
+      return {
+        role: nextRole,
+        domainId: null,
+      };
+    });
+  };
+
+  const saveAssignment = (userId: string | number) => {
+    if (!draft) {
+      return;
+    }
+
+    startTransition(async () => {
+      const response = await assignRoleAction(userId, draft.role, null);
+>>>>>>> Stashed changes
 
       if (!response.ok) {
         toast.error(response.error);
@@ -431,7 +504,11 @@ export default function RolesManagementTable({ initialData }: RolesManagementTab
           <div>
             <h2 className="text-xl font-bold text-slate-900">Access Control Matrix</h2>
             <p className="mt-1 text-sm text-slate-600">
+<<<<<<< Updated upstream
               Toggle Organiser, Volunteer, Venue Manager, HOD, Dean, CFO, Finance, and Master Admin access.
+=======
+              Assign global HOD, DEAN, CFO, or FINANCE_OFFICER roles directly on each user.
+>>>>>>> Stashed changes
             </p>
           </div>
 
@@ -474,6 +551,7 @@ export default function RolesManagementTable({ initialData }: RolesManagementTab
             />
           </div>
 
+<<<<<<< Updated upstream
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="overflow-x-auto">
               <table className="min-w-[1700px] w-full border-collapse">
@@ -494,6 +572,162 @@ export default function RolesManagementTable({ initialData }: RolesManagementTab
                     <th className="px-4 py-3 text-right text-xs font-bold uppercase tracking-wide text-slate-600">
                       Actions
                     </th>
+=======
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="min-w-[1500px] w-full border-collapse">
+            <thead className="bg-slate-100/80 text-left">
+              <tr>
+                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600">
+                  Name
+                </th>
+                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600">
+                  Email
+                </th>
+                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600">
+                  Joined Date
+                </th>
+                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600">
+                  HOD
+                </th>
+                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600">
+                  DEAN
+                </th>
+                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600">
+                  CFO
+                </th>
+                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600">
+                  FINANCE OFFICER
+                </th>
+                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600">
+                  Assignment Form
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-bold uppercase tracking-wide text-slate-600">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredUsers.map((user) => {
+                const roleKey = normalizeRoleKey(user.university_role, {
+                  is_hod: user.is_hod,
+                  is_dean: user.is_dean,
+                  is_cfo: user.is_cfo,
+                  is_finance_officer: user.is_finance_officer,
+                });
+                const isHod = roleKey === "hod";
+                const isDean = roleKey === "dean";
+                const isCfo = roleKey === "cfo";
+                const isFinance = roleKey === "finance_officer";
+                const isEditing = editingUserId !== null && sameUserId(editingUserId, user.id);
+
+                return (
+                  <tr key={`${user.id}-${user.email}`} className="border-t border-slate-200 align-top">
+                    <td className="px-4 py-4">
+                      <span className="text-sm font-semibold text-slate-900">{user.name || "Unnamed User"}</span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className="text-sm text-slate-700">{user.email}</span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className="text-sm text-slate-700">{formatDate(user.created_at)}</span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className={`text-sm font-medium ${isHod ? "text-emerald-700" : "text-slate-400"}`}>
+                        {isHod ? "Enabled" : "-"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className={`text-sm font-medium ${isDean ? "text-sky-700" : "text-slate-400"}`}>
+                        {isDean ? "Enabled" : "-"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className={`text-sm font-medium ${isCfo ? "text-amber-700" : "text-slate-400"}`}>
+                        {isCfo ? "Enabled" : "-"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className={`text-sm font-medium ${isFinance ? "text-violet-700" : "text-slate-400"}`}>
+                        {isFinance ? "Enabled" : "-"}
+                      </span>
+                    </td>
+
+                    <td className="px-4 py-4">
+                      {isEditing && draft ? (
+                        <div className="space-y-2">
+                          <div>
+                            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Role Select</label>
+                            <select
+                              value={draft.role}
+                              onChange={(event) => handleRoleChange(event.target.value as AssignableRole)}
+                              disabled={isPending}
+                              aria-label="Role Select"
+                              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                            >
+                              {ROLE_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                            Global Role Assignment
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-sm text-slate-400">Click Edit to assign role</span>
+                      )}
+                    </td>
+
+                    <td className="px-4 py-4">
+                      <div className="flex justify-end gap-2">
+                        {isEditing ? (
+                          <>
+                            <button
+                              type="button"
+                              disabled={isPending}
+                              onClick={() => saveAssignment(user.id)}
+                              className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isPending}
+                              onClick={cancelEdit}
+                              className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed"
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              disabled={isPending}
+                              onClick={() => beginEdit(user)}
+                              className="rounded-lg bg-sky-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isPending}
+                              onClick={() => requestDelete(user)}
+                              className="rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                            >
+                              {pendingDeleteUserId !== null && sameUserId(pendingDeleteUserId, user.id)
+                                ? "Deleting..."
+                                : "Delete"}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+>>>>>>> Stashed changes
                   </tr>
                 </thead>
                 <tbody>

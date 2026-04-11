@@ -159,24 +159,11 @@ export async function fetchCfoDashboardData({
   l2Threshold,
 }: {
   supabase: any;
-  campus: string;
+  campus?: string | null;
   l2Threshold: number;
 }): Promise<CfoDashboardData> {
   const normalizedCampus = String(campus || "").trim();
   const normalizedThreshold = Number.isFinite(l2Threshold) && l2Threshold > 0 ? l2Threshold : 100000;
-
-  if (!normalizedCampus) {
-    return {
-      queue: [],
-      metrics: {
-        campusRequestedBudgetYtd: 0,
-        campusApprovedBudgetYtd: 0,
-        highValuePendingRequests: 0,
-        highValuePendingBudget: 0,
-        l2Threshold: normalizedThreshold,
-      },
-    };
-  }
 
   const queueSelect = `
     event_id,
@@ -201,10 +188,9 @@ export async function fetchCfoDashboardData({
     )
   `;
 
-  const pendingEventsQuery = supabase
+  let pendingEventsQuery = supabase
     .from("events")
     .select(queueSelect)
-    .eq("campus_hosted_at", normalizedCampus)
     .is("fest_id", null)
     .eq("approval_requests.approval_level", "L3_CFO")
     .eq("approval_requests.status", "pending")
@@ -213,6 +199,10 @@ export async function fetchCfoDashboardData({
       ascending: true,
       referencedTable: "approval_requests",
     });
+
+  if (normalizedCampus) {
+    pendingEventsQuery = pendingEventsQuery.eq("campus_hosted_at", normalizedCampus);
+  }
 
   const { data: pendingEventsData, error: pendingEventsError } = await pendingEventsQuery;
 
@@ -314,15 +304,18 @@ export async function fetchCfoDashboardData({
 
   const { startDate, endDate } = getYearDateBounds(new Date());
 
-  const ytdEventsQuery = supabase
+  let ytdEventsQuery = supabase
     .from("events")
     .select(queueSelect)
-    .eq("campus_hosted_at", normalizedCampus)
     .is("fest_id", null)
     .eq("approval_requests.approval_level", "L3_CFO")
     .gt("event_budgets.total_estimated_expense", normalizedThreshold)
     .gte("event_date", startDate)
     .lte("event_date", endDate);
+
+  if (normalizedCampus) {
+    ytdEventsQuery = ytdEventsQuery.eq("campus_hosted_at", normalizedCampus);
+  }
 
   const { data: ytdEventsData, error: ytdEventsError } = await ytdEventsQuery;
 

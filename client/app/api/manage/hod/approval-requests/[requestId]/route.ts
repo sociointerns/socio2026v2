@@ -130,11 +130,6 @@ export async function PATCH(
       return jsonError(403, "Only HOD or Master Admin users can perform L1 actions.");
     }
 
-    const departmentId = String(userProfile.department_id || "").trim();
-    if (!departmentId && !isMasterAdmin) {
-      return jsonError(403, "No department is mapped to this HOD account.");
-    }
-
     const body = await request.json().catch(() => null);
     const action = parseAction(body?.action);
     const note = typeof body?.note === "string" ? body.note.trim() : "";
@@ -186,10 +181,6 @@ export async function PATCH(
 
     if (String(requestRow.status || "") !== "pending") {
       return jsonError(409, "This request is no longer pending.");
-    }
-
-    if (!isMasterAdmin && String(eventRow.organizing_dept || "") !== departmentId) {
-      return jsonError(403, "This request does not belong to your department.");
     }
 
     if (eventRow.fest_id !== null && eventRow.fest_id !== undefined && String(eventRow.fest_id).trim() !== "") {

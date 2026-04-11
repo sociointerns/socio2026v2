@@ -146,6 +146,7 @@ export async function PATCH(
 
     const universityRole = String(userProfile.university_role || "").toLowerCase().trim();
     const isMasterAdmin = Boolean(userProfile.is_masteradmin);
+<<<<<<< Updated upstream
     const isCfo = Boolean(userProfile.is_cfo) || universityRole === "cfo";
 
     if (!isMasterAdmin && !isCfo) {
@@ -155,6 +156,11 @@ export async function PATCH(
     const userCampus = String(userProfile.campus || "").trim();
     if (!userCampus) {
       return jsonError(403, "No campus scope is mapped to this CFO account.");
+=======
+    const isCfoUser = Boolean(userProfile.is_cfo) || universityRole === "cfo";
+    if (!isCfoUser && !isMasterAdmin) {
+      return jsonError(403, "Only CFO or Master Admin users can perform L3 actions.");
+>>>>>>> Stashed changes
     }
 
     const body = await request.json().catch(() => null);
@@ -211,10 +217,6 @@ export async function PATCH(
       return jsonError(409, "This request is no longer pending.");
     }
 
-    if (String(eventRow.campus_hosted_at || "").trim() !== userCampus) {
-      return jsonError(403, "This request does not belong to your campus scope.");
-    }
-
     if (eventRow.fest_id !== null && eventRow.fest_id !== undefined && String(eventRow.fest_id).trim() !== "") {
       return jsonError(400, "Fest-linked events bypass CFO approval.");
     }
@@ -235,7 +237,8 @@ export async function PATCH(
     }
 
     const budgetValue = Number((budgetData as any)?.total_estimated_expense || 0);
-    const l2Threshold = await resolveL2Threshold(supabase, userCampus);
+    const thresholdCampus = String(eventRow.campus_hosted_at || userProfile.campus || "").trim();
+    const l2Threshold = await resolveL2Threshold(supabase, thresholdCampus);
 
     if (!Number.isFinite(budgetValue) || budgetValue <= l2Threshold) {
       return jsonError(400, "Event budget is not above the CFO threshold and should bypass L3.");

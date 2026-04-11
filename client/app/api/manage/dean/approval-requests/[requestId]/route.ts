@@ -152,11 +152,6 @@ export async function PATCH(
       return jsonError(403, "Only Dean or Master Admin users can perform L2 actions.");
     }
 
-    const schoolId = String(userProfile.school_id || "").trim();
-    if (!schoolId && !isMasterAdmin) {
-      return jsonError(403, "No school scope is mapped to this Dean account.");
-    }
-
     const body = await request.json().catch(() => null);
     const action = parseAction(body?.action);
     const note = typeof body?.note === "string" ? body.note.trim() : "";
@@ -210,10 +205,6 @@ export async function PATCH(
 
     if (String(requestRow.status || "") !== "pending") {
       return jsonError(409, "This request is no longer pending.");
-    }
-
-    if (!isMasterAdmin && String(eventRow.organizing_school || "") !== schoolId) {
-      return jsonError(403, "This request does not belong to your school scope.");
     }
 
     if (eventRow.fest_id !== null) {

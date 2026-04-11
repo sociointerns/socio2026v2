@@ -41,63 +41,7 @@ const isMasterAdminRequest = (req) => {
   return Boolean(req.userInfo?.is_masteradmin) || hasAnyRoleCode(getUserRoleCodes(req), [ROLE_CODES.MASTER_ADMIN]);
 };
 
-const isAssignmentActive = (assignment) => {
-  if (!assignment || assignment.is_active === false) {
-    return false;
-  }
-
-  const now = Date.now();
-  const validFrom = assignment.valid_from ? new Date(assignment.valid_from).getTime() : null;
-  const validUntil = assignment.valid_until ? new Date(assignment.valid_until).getTime() : null;
-
-  if (Number.isFinite(validFrom) && validFrom > now) {
-    return false;
-  }
-
-  if (Number.isFinite(validUntil) && validUntil <= now) {
-    return false;
-  }
-
-  return true;
-};
-
-const hasScopeAccessForRequest = (req, roleCode, approvalRequest) => {
-  if (!approvalRequest) {
-    return false;
-  }
-
-  if (isMasterAdminRequest(req)) {
-    return true;
-  }
-
-  const assignments = Array.isArray(req.userInfo?.role_assignments)
-    ? req.userInfo.role_assignments
-    : [];
-
-  const matchingAssignments = assignments
-    .filter((assignment) => normalizeRoleCode(assignment.role_code) === normalizeRoleCode(roleCode))
-    .filter(isAssignmentActive);
-
-  // If this is a legacy session without scoped role records, fall back to role-only access.
-  if (matchingAssignments.length === 0) {
-    return hasAnyRoleCode(getUserRoleCodes(req), [roleCode]);
-  }
-
-  const requestCampus = String(approvalRequest.campus_hosted_at || "").trim().toLowerCase();
-  const requestDepartment = String(approvalRequest.organizing_dept || "").trim().toLowerCase();
-
-  return matchingAssignments.some((assignment) => {
-    const assignmentCampus = String(assignment.campus_scope || "").trim().toLowerCase();
-    const assignmentDepartment = String(assignment.department_scope || "").trim().toLowerCase();
-
-    const campusMatches = !assignmentCampus || assignmentCampus === requestCampus;
-    const departmentMatches = !assignmentDepartment || assignmentDepartment === requestDepartment;
-
-    return campusMatches && departmentMatches;
-  });
-};
-
-const ensureQueueAccess = (req, res, roleCode, approvalRequest = null) => {
+const ensureQueueAccess = (req, res, roleCode) => {
   const normalizedRoleCode = normalizeRoleCode(roleCode);
 
   if (!normalizedRoleCode) {
@@ -111,11 +55,6 @@ const ensureQueueAccess = (req, res, roleCode, approvalRequest = null) => {
 
   if (!hasAnyRoleCode(getUserRoleCodes(req), [normalizedRoleCode])) {
     res.status(403).json({ error: "Access denied: role queue access not permitted" });
-    return false;
-  }
-
-  if (approvalRequest && !hasScopeAccessForRequest(req, normalizedRoleCode, approvalRequest)) {
-    res.status(403).json({ error: "Access denied: request outside assigned scope" });
     return false;
   }
 
@@ -199,10 +138,6 @@ router.get("/queues/:roleCode", async (req, res) => {
 
       if (!approvalRequest) {
         continue;
-      }
-
-      if (!ensureQueueAccess(req, res, roleCode, approvalRequest)) {
-        return;
       }
 
       items.push({

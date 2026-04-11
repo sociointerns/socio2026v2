@@ -108,8 +108,31 @@ function sameUserId(left: string | number, right: string | number): boolean {
   return String(left) === String(right);
 }
 
+<<<<<<< Updated upstream
 function normalizeUniversityRole(value: unknown): UniversityRoleKey {
   const normalized = String(value || "").trim().toLowerCase();
+=======
+function normalizeUserRecord(row: any): UserRoleRow {
+  return {
+    id: row.id,
+    name: row.name ?? null,
+    email: String(row.email ?? ""),
+    created_at: row.created_at ?? null,
+    is_masteradmin: Boolean(row.is_masteradmin),
+    is_hod: Boolean(row.is_hod),
+    is_dean: Boolean(row.is_dean),
+    is_cfo: Boolean(row.is_cfo),
+    is_finance_officer: Boolean(row.is_finance_officer),
+    department_id: row.department_id ?? null,
+    school_id: row.school_id ?? null,
+    campus: row.campus ?? null,
+    university_role: row.university_role ?? null,
+  };
+}
+
+function normalizeAssignableRole(input: string): AssignableRole | null {
+  const normalized = input.trim().toUpperCase();
+>>>>>>> Stashed changes
   if (
     normalized === "masteradmin" ||
     normalized === "hod" ||
@@ -123,6 +146,7 @@ function normalizeUniversityRole(value: unknown): UniversityRoleKey {
   return null;
 }
 
+<<<<<<< Updated upstream
 function parseMissingColumnName(error: { message?: string | null; details?: string | null }): string | null {
   const text = `${error?.message || ""} ${error?.details || ""}`;
   const directMatch = text.match(/column\s+([\w."']+)\s+does not exist/i);
@@ -142,6 +166,35 @@ function isMissingColumnError(error: { message?: string | null; details?: string
   return (
     text.includes("column") &&
     (text.includes("does not exist") || text.includes("schema cache") || text.includes("could not find"))
+=======
+function mapToUniversityRole(role: AssignableRole): "hod" | "dean" | "cfo" | "finance_officer" {
+  if (role === "HOD") {
+    return "hod";
+  }
+
+  if (role === "DEAN") {
+    return "dean";
+  }
+
+  if (role === "CFO") {
+    return "cfo";
+  }
+
+  return "finance_officer";
+}
+
+function isMissingColumnError(error: { message?: string | null; details?: string | null }) {
+  const fullText = `${error?.message ?? ""} ${error?.details ?? ""}`.toLowerCase();
+  return (
+    fullText.includes("column") &&
+    (fullText.includes("university_role") ||
+      fullText.includes("campus") ||
+      fullText.includes("is_hod") ||
+      fullText.includes("is_dean") ||
+      fullText.includes("is_cfo") ||
+      fullText.includes("is_finance_officer") ||
+      fullText.includes("school_id"))
+>>>>>>> Stashed changes
   );
 }
 
@@ -292,7 +345,11 @@ async function assertMasterAdmin() {
 
   const { data: byAuthUuid, error: byAuthUuidError } = await adminClient
     .from("users")
+<<<<<<< Updated upstream
     .select("id,email,university_role,is_masteradmin")
+=======
+    .select("id,email,is_masteradmin,university_role")
+>>>>>>> Stashed changes
     .eq("auth_uuid", authUser.id)
     .maybeSingle();
 
@@ -305,7 +362,11 @@ async function assertMasterAdmin() {
   if (!actingUser && authUser.email) {
     const { data: byEmail, error: byEmailError } = await adminClient
       .from("users")
+<<<<<<< Updated upstream
       .select("id,email,university_role,is_masteradmin")
+=======
+      .select("id,email,is_masteradmin,university_role")
+>>>>>>> Stashed changes
       .eq("email", authUser.email)
       .maybeSingle();
 
@@ -320,8 +381,14 @@ async function assertMasterAdmin() {
     throw new Error("Unable to resolve your user profile for role checks.");
   }
 
+<<<<<<< Updated upstream
   const actingRole = normalizeUniversityRole(actingUser.university_role);
   if (!Boolean(actingUser.is_masteradmin) && actingRole !== "masteradmin") {
+=======
+  const actingRole = String(actingUser.university_role || "").toLowerCase().trim();
+  const actingIsMasterAdmin = Boolean((actingUser as any).is_masteradmin);
+  if (actingRole !== "masteradmin" && !actingIsMasterAdmin) {
+>>>>>>> Stashed changes
     throw new Error("Master Admin privileges are required.");
   }
 
@@ -330,6 +397,11 @@ async function assertMasterAdmin() {
     actingUser: {
       id: actingUser.id as string | number,
       email: String(actingUser.email || authUser.email || ""),
+<<<<<<< Updated upstream
+=======
+      is_masteradmin: actingIsMasterAdmin,
+      university_role: actingRole,
+>>>>>>> Stashed changes
     },
   };
 }
@@ -752,11 +824,62 @@ async function buildRolesAnalytics(adminClient: any): Promise<RolesAnalytics> {
 export async function getRolesTableData(): Promise<RolesPageData> {
   const { adminClient } = await assertMasterAdmin();
 
+<<<<<<< Updated upstream
   const usersRows = await fetchUsersWithFallback(adminClient);
   const assignmentFallbackMap = await fetchRoleAssignmentFallbacks(
     adminClient,
     usersRows.map((row: any) => row.id)
   );
+=======
+  const usersSelect =
+    "id,name,email,created_at,is_masteradmin,is_hod,is_dean,is_cfo,is_finance_officer,department_id,school_id,campus,university_role";
+
+  let usersData: any[] | null = null;
+
+  const usersQuery = await adminClient
+    .from("users")
+    .select(usersSelect)
+    .order("created_at", { ascending: false });
+
+  if (usersQuery.error) {
+    if (isMissingColumnError(usersQuery.error)) {
+      const legacyUsersQuery = await adminClient
+        .from("users")
+        .select("id,name,email,created_at,is_masteradmin,is_hod,is_dean,department_id,school_id,campus")
+        .order("created_at", { ascending: false });
+
+      if (legacyUsersQuery.error) {
+        throw new Error(legacyUsersQuery.error.message || "Failed to load users.");
+      }
+
+      usersData = (legacyUsersQuery.data || []).map((row: any) => {
+        const derivedRole = Boolean(row.is_masteradmin)
+          ? "masteradmin"
+          : Boolean(row.is_hod)
+            ? "hod"
+            : Boolean(row.is_dean)
+              ? "dean"
+              : Boolean(row.is_cfo)
+                ? "cfo"
+                : Boolean(row.is_finance_officer)
+                  ? "finance_officer"
+              : null;
+
+        return {
+          ...row,
+          is_cfo: Boolean(row.is_cfo) || derivedRole === "cfo",
+          is_finance_officer: Boolean(row.is_finance_officer) || derivedRole === "finance_officer",
+          university_role: derivedRole,
+          campus: row.campus ?? null,
+        };
+      });
+    } else {
+      throw new Error(usersQuery.error.message || "Failed to load users.");
+    }
+  } else {
+    usersData = usersQuery.data;
+  }
+>>>>>>> Stashed changes
 
   const { data: departmentRows, error: departmentError } = await adminClient
     .from("departments_courses")
@@ -833,6 +956,7 @@ export async function updateUserAccess(
   rolePayload: UserAccessPayload
 ): Promise<UpdateUserAccessActionResult> {
   try {
+    void domainId;
     const { adminClient, actingUser } = await assertMasterAdmin();
     const targetUserId = coerceUserId(userId);
     const payload = normalizeAccessPayload(rolePayload);
@@ -848,6 +972,7 @@ export async function updateUserAccess(
       };
     }
 
+<<<<<<< Updated upstream
     if (payload.is_hod && !payload.department_id) {
       return { ok: false, error: "Select a department before enabling HOD." };
     }
@@ -892,6 +1017,8 @@ export async function updateUserAccess(
       }
     }
 
+=======
+>>>>>>> Stashed changes
     const { data: existingUser, error: existingUserError } = await adminClient
       .from("users")
       .select("id,email,is_masteradmin,university_role")
@@ -905,8 +1032,20 @@ export async function updateUserAccess(
       return { ok: false, error: "User not found." };
     }
 
+<<<<<<< Updated upstream
     const isExistingMasterAdmin =
       Boolean(existingUser.is_masteradmin) || normalizeUniversityRole(existingUser.university_role) === "masteradmin";
+=======
+    const existingRole = String(existingUser.university_role || "").toLowerCase().trim();
+    const existingIsMasterAdmin = Boolean((existingUser as any).is_masteradmin);
+    if (existingRole === "masteradmin" || existingIsMasterAdmin) {
+      if (sameUserId(existingUser.id, actingUser.id)) {
+        return {
+          ok: false,
+          error: "You cannot reassign your own Master Admin account.",
+        };
+      }
+>>>>>>> Stashed changes
 
     if (isExistingMasterAdmin && !payload.is_masteradmin && sameUserId(existingUser.id, actingUser.id)) {
       return { ok: false, error: "You cannot remove your own Master Admin access." };
@@ -926,6 +1065,7 @@ export async function updateUserAccess(
       }
     }
 
+<<<<<<< Updated upstream
     const strictDepartmentId = payload.is_hod ? payload.department_id : null;
     const strictSchoolId = payload.is_dean ? payload.school_id : null;
     const strictCampus = payload.is_cfo ? payload.campus : null;
@@ -1003,6 +1143,47 @@ export async function updateUserAccess(
 
     if (!updatedRow) {
       return { ok: false, error: "User was updated but could not be reloaded." };
+=======
+    const updatePayload: Record<string, any> = {
+      university_role: mapToUniversityRole(normalizedRole),
+      department_id: null,
+      school_id: null,
+      campus: null,
+      is_hod: false,
+      is_dean: false,
+      is_cfo: false,
+      is_finance_officer: false,
+    };
+
+    if (normalizedRole === "HOD") {
+      updatePayload.is_hod = true;
+    } else if (normalizedRole === "DEAN") {
+      updatePayload.is_dean = true;
+    } else if (normalizedRole === "CFO") {
+      updatePayload.is_cfo = true;
+    } else if (normalizedRole === "FINANCE_OFFICER") {
+      updatePayload.is_finance_officer = true;
+    }
+
+    const { data: updatedUser, error: updateError } = await adminClient
+      .from("users")
+      .update(updatePayload)
+      .eq("id", targetUserId)
+      .select(
+        "id,name,email,created_at,is_masteradmin,is_hod,is_dean,is_cfo,is_finance_officer,department_id,school_id,campus,university_role"
+      )
+      .single();
+
+    if (updateError) {
+      const fallbackMessage = isMissingColumnError(updateError)
+        ? "Role schema is outdated. Please apply the latest users role-scope migration."
+        : updateError.message || "Failed to assign user role.";
+
+      return {
+        ok: false,
+        error: fallbackMessage,
+      };
+>>>>>>> Stashed changes
     }
 
     revalidatePath("/masteradmin");
@@ -1055,10 +1236,16 @@ export async function deleteUserAccount(
       };
     }
 
+<<<<<<< Updated upstream
     const isExistingMasterAdmin =
       Boolean(existingUser.is_masteradmin) || normalizeUniversityRole(existingUser.university_role) === "masteradmin";
 
     if (isExistingMasterAdmin) {
+=======
+    const existingRole = String(existingUser.university_role || "").toLowerCase().trim();
+    const existingIsMasterAdmin = Boolean((existingUser as any).is_masteradmin);
+    if (existingRole === "masteradmin" || existingIsMasterAdmin) {
+>>>>>>> Stashed changes
       const { count, error: countError } = await adminClient
         .from("users")
         .select("id", { head: true, count: "exact" })

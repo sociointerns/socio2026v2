@@ -114,11 +114,6 @@ export default async function DeanManagePage() {
     redirect("/manage");
   }
 
-  const schoolId = String(userProfile.school_id || "").trim();
-  if (!schoolId && !isMasterAdmin) {
-    redirect("/error");
-  }
-
   const campusName = String(userProfile.campus || "").trim();
   const l1Threshold = await resolveL1Threshold(supabase, campusName);
 
@@ -136,7 +131,7 @@ export default async function DeanManagePage() {
   try {
     dashboardData = await fetchDeanDashboardData({
       supabase,
-      schoolId: schoolId || null,
+      schoolId: null,
       l1Threshold,
     });
   } catch (error) {
@@ -152,7 +147,7 @@ export default async function DeanManagePage() {
         </div>
       ) : null}
       <DeanDashboardClient
-        schoolName={schoolId || "All Schools"}
+        schoolName="All Schools"
         l1Threshold={l1Threshold}
         initialQueue={dashboardData.queue}
         initialMetrics={dashboardData.metrics}

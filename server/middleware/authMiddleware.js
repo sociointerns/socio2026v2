@@ -2,8 +2,10 @@ import supabase from "../config/supabaseClient.js";
 import { queryAll, queryOne, update } from "../config/database.js";
 import {
   ROLE_CODES,
+  combineRoleCodes,
+  deriveFallbackRoleCodesFromAssignments,
   deriveLegacyFlagsFromRoleCodes,
-  deriveRoleCodesFromAssignments,
+  deriveRoleCodesFromUserRecord,
   hasAnyRoleCode,
 } from "../utils/roleAccessService.js";
 
@@ -26,6 +28,8 @@ const enrichUserInfoWithRoleAssignments = async (userRecord) => {
     return userRecord;
   }
 
+  const roleCodesFromUsers = deriveRoleCodesFromUserRecord(userRecord);
+
   try {
     const assignments = await queryAll(ROLE_ASSIGNMENTS_TABLE, {
       where: { user_id: userRecord.id },
@@ -33,7 +37,8 @@ const enrichUserInfoWithRoleAssignments = async (userRecord) => {
     });
 
     const roleAssignments = Array.isArray(assignments) ? assignments : [];
-    const roleCodes = deriveRoleCodesFromAssignments(roleAssignments);
+    const fallbackRoleCodes = deriveFallbackRoleCodesFromAssignments(roleAssignments);
+    const roleCodes = combineRoleCodes(roleCodesFromUsers, fallbackRoleCodes);
     const legacyRoleFlags = deriveLegacyFlagsFromRoleCodes(roleCodes, userRecord);
 
     return {
@@ -44,10 +49,13 @@ const enrichUserInfoWithRoleAssignments = async (userRecord) => {
     };
   } catch (error) {
     if (isMissingRelationError(error)) {
+      const legacyRoleFlags = deriveLegacyFlagsFromRoleCodes(roleCodesFromUsers, userRecord);
+
       return {
         ...userRecord,
+        ...legacyRoleFlags,
         role_assignments: [],
-        role_codes: [],
+        role_codes: roleCodesFromUsers,
       };
     }
 

@@ -95,19 +95,6 @@ type User = {
   register_number?: number | null;
 };
 
-type DepartmentScopeOption = {
-  id: string;
-  department_name: string;
-  school?: string | null;
-};
-
-type SchoolScopeOption = {
-  id: string;
-  name: string;
-};
-
-type CampusScopeOption = string;
-
 type Event = {
   event_id: string;
   title: string;
@@ -176,15 +163,6 @@ const ACCREDITATION_BODIES = [
   { id: "nirf", name: "NIRF", fullName: "National Institutional Ranking Framework", description: "Not accreditation, but a national ranking framework.", focus: "Teaching, research, graduation outcomes, outreach." },
   { id: "aicte", name: "AICTE", fullName: "All India Council for Technical Education", description: "Regulatory approval body for technical institutions.", focus: "Technical education standards, infrastructure, faculty." },
   { id: "ugc", name: "UGC", fullName: "University Grants Commission", description: "Regulatory authority for universities in India.", focus: "University standards, grants, governance." },
-];
-
-const CAMPUS_SCOPE_FALLBACK: CampusScopeOption[] = [
-  "Central Campus (Main)",
-  "Bannerghatta Road Campus",
-  "Yeshwanthpur Campus",
-  "Kengeri Campus",
-  "Delhi NCR Campus",
-  "Pune Lavasa Campus",
 ];
 
 type ScopedRole = "hod" | "dean" | "cfo" | "finance_officer" | null;
@@ -264,9 +242,6 @@ export default function MasterAdminPage() {
   const [roleFilter, setRoleFilter] = useState("all");
   const [editingUserId, setEditingUserId] = useState<number | null>(null);
   const [editingUserRoles, setEditingUserRoles] = useState<Partial<User>>({});
-  const [departmentScopeOptions, setDepartmentScopeOptions] = useState<DepartmentScopeOption[]>([]);
-  const [schoolScopeOptions, setSchoolScopeOptions] = useState<SchoolScopeOption[]>([]);
-  const [campusScopeOptions, setCampusScopeOptions] = useState<CampusScopeOption[]>([]);
   const [showDeleteUserConfirm, setShowDeleteUserConfirm] = useState<string | null>(null);
   const [userPage, setUserPage] = useState(1);
   
@@ -332,7 +307,6 @@ export default function MasterAdminPage() {
     
     if (activeTab === "users") {
       fetchUsers();
-      fetchRoleScopeOptions();
     } else if (activeTab === "events") {
       fetchEvents();
     } else if (activeTab === "fests") {
@@ -538,38 +512,6 @@ export default function MasterAdminPage() {
     }
   };
 
-  const fetchRoleScopeOptions = async () => {
-    try {
-      const token = await getFreshToken();
-      if (!token) {
-        return;
-      }
-
-      const response = await fetch(`${API_URL}/api/users/role-scopes`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch role scope options");
-      }
-
-      const data = await response.json();
-      setDepartmentScopeOptions(Array.isArray(data?.departments) ? data.departments : []);
-      setSchoolScopeOptions(Array.isArray(data?.schools) ? data.schools : []);
-      setCampusScopeOptions(
-        Array.isArray(data?.campuses)
-          ? data.campuses
-              .map((campusName: unknown) => String(campusName || "").trim())
-              .filter((campusName: string) => campusName.length > 0)
-          : CAMPUS_SCOPE_FALLBACK
-      );
-    } catch (error) {
-      console.error("Error fetching role scope options:", error);
-    }
-  };
-
   const fetchEvents = async (options?: { unpaged?: boolean }) => {
     try {
       setIsLoading(true);
@@ -763,16 +705,6 @@ export default function MasterAdminPage() {
     }));
   };
 
-  const handleRoleScopeChange = (
-    field: "department_id" | "school_id" | "campus",
-    value: string | null
-  ) => {
-    setEditingUserRoles((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
-  };
-
   const saveRoleChanges = async (user: User) => {
     try {
       const normalizeOptionalText = (value: unknown): string | null => {
@@ -787,6 +719,7 @@ export default function MasterAdminPage() {
       const isDeanScoped = scopedRole === "dean";
       const isCfoScoped = scopedRole === "cfo";
       const isFinanceScoped = scopedRole === "finance_officer";
+<<<<<<< Updated upstream
       const selectedDepartmentId = normalizeOptionalText(editingUserRoles.department_id);
       const selectedSchoolId = normalizeOptionalText(editingUserRoles.school_id);
       const selectedCampus = normalizeOptionalText(editingUserRoles.campus);
@@ -829,6 +762,8 @@ export default function MasterAdminPage() {
         toast.error("Finance Officer is global and cannot be tied to department, school, or campus.");
         return;
       }
+=======
+>>>>>>> Stashed changes
 
       const token = await getFreshToken();
       const payload: Record<string, unknown> = {
@@ -857,7 +792,23 @@ export default function MasterAdminPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
+<<<<<<< Updated upstream
         body: JSON.stringify(payload),
+=======
+        body: JSON.stringify({
+          is_organiser: editingUserRoles.is_organiser,
+          organiser_expires_at: editingUserRoles.organiser_expires_at || null,
+          is_support: editingUserRoles.is_support,
+          support_expires_at: editingUserRoles.support_expires_at || null,
+          is_masteradmin: editingUserRoles.is_masteradmin,
+          masteradmin_expires_at: editingUserRoles.masteradmin_expires_at || null,
+          is_hod: isHodScoped,
+          is_dean: isDeanScoped,
+          is_cfo: isCfoScoped,
+          is_finance_officer: isFinanceScoped,
+          university_role: scopedRole,
+        }),
+>>>>>>> Stashed changes
       });
 
       if (!response.ok) {
@@ -1302,8 +1253,6 @@ export default function MasterAdminPage() {
                           const displayRoles = isEditing ? editingUserRoles : user;
                           const { isHod: isDisplayHod, isDean: isDisplayDean, isCfo: isDisplayCfo, isFinanceOfficer: isDisplayFinanceOfficer } =
                             scopedRoleBooleans(displayRoles);
-                          const availableCampuses =
-                            campusScopeOptions.length > 0 ? campusScopeOptions : CAMPUS_SCOPE_FALLBACK;
 
                           return (
                             <tr key={user.email} className="hover:bg-gray-50 transition-colors">
@@ -1393,35 +1342,7 @@ export default function MasterAdminPage() {
                                     </span>
                                   </label>
                                   {isDisplayHod && (
-                                    <div className="mt-1">
-                                      {isEditing ? (
-                                        <select
-                                          value={displayRoles.department_id || ""}
-                                          onChange={(event) =>
-                                            handleRoleScopeChange(
-                                              "department_id",
-                                              event.target.value || null
-                                            )
-                                          }
-                                          aria-label="Select HOD department"
-                                          title="Select HOD department"
-                                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                                        >
-                                          <option value="">Select department</option>
-                                          {departmentScopeOptions.map((department) => (
-                                            <option key={department.id} value={department.id}>
-                                              {department.department_name}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      ) : (
-                                        <p className="text-xs text-gray-600">
-                                          {departmentScopeOptions.find(
-                                            (department) => department.id === displayRoles.department_id
-                                          )?.department_name || displayRoles.department_id || "No department"}
-                                        </p>
-                                      )}
-                                    </div>
+                                    <p className="text-xs text-indigo-700 font-medium">Global Role Access</p>
                                   )}
                                 </div>
                               </td>
@@ -1441,33 +1362,7 @@ export default function MasterAdminPage() {
                                     </span>
                                   </label>
                                   {isDisplayDean && (
-                                    <div className="mt-1">
-                                      {isEditing ? (
-                                        <select
-                                          value={displayRoles.school_id || ""}
-                                          onChange={(event) =>
-                                            handleRoleScopeChange("school_id", event.target.value || null)
-                                          }
-                                          aria-label="Select Dean school"
-                                          title="Select Dean school"
-                                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                                        >
-                                          <option value="">Select school</option>
-                                          {schoolScopeOptions.map((school) => (
-                                            <option key={school.id} value={school.id}>
-                                              {school.name}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      ) : (
-                                        <p className="text-xs text-gray-600">
-                                          {schoolScopeOptions.find((school) => school.id === displayRoles.school_id)
-                                            ?.name ||
-                                            displayRoles.school_id ||
-                                            "No school"}
-                                        </p>
-                                      )}
-                                    </div>
+                                    <p className="text-xs text-purple-700 font-medium">Global Role Access</p>
                                   )}
                                 </div>
                               </td>
@@ -1487,30 +1382,7 @@ export default function MasterAdminPage() {
                                     </span>
                                   </label>
                                   {isDisplayCfo && (
-                                    <div className="mt-1">
-                                      {isEditing ? (
-                                        <select
-                                          value={displayRoles.campus || ""}
-                                          onChange={(event) =>
-                                            handleRoleScopeChange("campus", event.target.value || null)
-                                          }
-                                          aria-label="Select CFO campus"
-                                          title="Select CFO campus"
-                                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-                                        >
-                                          <option value="">Select campus</option>
-                                          {availableCampuses.map((campusName) => (
-                                            <option key={campusName} value={campusName}>
-                                              {campusName}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      ) : (
-                                        <p className="text-xs text-gray-600">
-                                          {displayRoles.campus || "No campus"}
-                                        </p>
-                                      )}
-                                    </div>
+                                    <p className="text-xs text-amber-700 font-medium">Global Role Access</p>
                                   )}
                                 </div>
                               </td>

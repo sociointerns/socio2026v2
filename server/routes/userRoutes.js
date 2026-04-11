@@ -69,11 +69,13 @@ router.get(
           users = users.filter(user => user.is_dean);
           break;
         case 'cfo':
-          users = users.filter(user => normalizeRole(user.university_role) === 'cfo');
+          users = users.filter(user => Boolean(user.is_cfo) || normalizeRole(user.university_role) === 'cfo');
           break;
         case 'finance':
         case 'finance_officer':
-          users = users.filter(user => normalizeRole(user.university_role) === 'finance_officer');
+          users = users.filter(
+            user => Boolean(user.is_finance_officer) || normalizeRole(user.university_role) === 'finance_officer'
+          );
           break;
       }
     }
@@ -584,9 +586,6 @@ router.put("/:email/roles", authenticateUser, getUserInfo(), checkRoleExpiration
       is_dean,
       is_cfo,
       is_finance_officer,
-      department_id,
-      school_id,
-      campus,
       university_role
     } = req.body;
 
@@ -631,9 +630,6 @@ router.put("/:email/roles", authenticateUser, getUserInfo(), checkRoleExpiration
       typeof is_dean === 'boolean' ||
       typeof is_cfo === 'boolean' ||
       typeof is_finance_officer === 'boolean' ||
-      department_id !== undefined ||
-      school_id !== undefined ||
-      campus !== undefined ||
       university_role !== undefined;
 
     if (roleScopePayloadProvided) {
@@ -671,63 +667,11 @@ router.put("/:email/roles", authenticateUser, getUserInfo(), checkRoleExpiration
         nextIsFinanceOfficer = requestedRole === 'finance_officer';
       }
 
-      const rawDepartmentId =
-        department_id !== undefined
-          ? department_id
-          : existingUser.department_id;
-      const rawSchoolId =
-        school_id !== undefined
-          ? school_id
-          : existingUser.school_id;
-      const rawCampus =
-        campus !== undefined
-          ? campus
-          : existingUser.campus;
-
-      const nextDepartmentId =
-        rawDepartmentId === null || rawDepartmentId === undefined
-          ? null
-          : String(rawDepartmentId).trim() || null;
-
-      const nextSchoolId =
-        rawSchoolId === null || rawSchoolId === undefined
-          ? null
-          : String(rawSchoolId).trim() || null;
-
-      const nextCampus =
-        rawCampus === null || rawCampus === undefined
-          ? null
-          : String(rawCampus).trim() || null;
-
       const enabledScopedRoles = [nextIsHod, nextIsDean, nextIsCfo, nextIsFinanceOfficer].filter(Boolean).length;
 
       if (enabledScopedRoles > 1) {
         return res.status(400).json({
           error: "A user can hold only one scoped role at a time (HOD, Dean, CFO, Finance Officer)."
-        });
-      }
-
-      if (nextIsHod && !nextDepartmentId) {
-        return res.status(400).json({
-          error: "Select a department before enabling HOD."
-        });
-      }
-
-      if (nextIsDean && !nextSchoolId) {
-        return res.status(400).json({
-          error: "Select a school before enabling Dean."
-        });
-      }
-
-      if (nextIsCfo && !nextCampus) {
-        return res.status(400).json({
-          error: "Select a campus before enabling CFO."
-        });
-      }
-
-      if (nextIsCfo && nextCampus && !VALID_CAMPUSES.includes(nextCampus)) {
-        return res.status(400).json({
-          error: "Invalid campus selection for CFO role."
         });
       }
 
@@ -747,9 +691,8 @@ router.put("/:email/roles", authenticateUser, getUserInfo(), checkRoleExpiration
 
       updates.is_hod = nextIsHod;
       updates.is_dean = nextIsDean;
-      updates.department_id = nextIsHod ? nextDepartmentId : null;
-      updates.school_id = nextIsDean ? nextSchoolId : null;
-      updates.campus = nextIsCfo ? nextCampus : null;
+      updates.is_cfo = nextIsCfo;
+      updates.is_finance_officer = nextIsFinanceOfficer;
       updates.university_role = nextUniversityRole;
     }
 
