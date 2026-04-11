@@ -64,6 +64,7 @@ const ROLE_CODE_ORGANIZER_STUDENT = "ORGANIZER_STUDENT";
 const ROLE_CODE_ORGANIZER_VOLUNTEER = "ORGANIZER_VOLUNTEER";
 const ROLE_CODE_SUPPORT = "SUPPORT";
 const ROLE_CODE_FINANCE_OFFICER = "FINANCE_OFFICER";
+const ROLE_CODE_ACCOUNTS = "ACCOUNTS";
 const ROLE_CODE_SERVICE_IT = "SERVICE_IT";
 const ROLE_CODE_SERVICE_VENUE = "SERVICE_VENUE";
 const ROLE_CODE_SERVICE_CATERING = "SERVICE_CATERING";
@@ -609,7 +610,9 @@ export default function RolesManagementTable({ initialData }: RolesManagementTab
     const activeAssignments = data.roleAssignments.filter((assignment) => isRoleAssignmentActive(assignment));
 
     activeAssignments.forEach((assignment) => {
-      const roleCode = String(assignment.role_code || "").toUpperCase();
+      const roleCodeRaw = String(assignment.role_code || "").toUpperCase();
+      const roleCode =
+        roleCodeRaw === ROLE_CODE_ACCOUNTS ? ROLE_CODE_FINANCE_OFFICER : roleCodeRaw;
       const holder = resolveHolder(assignment.user_id);
       const campus = assignment.campus_scope || "-";
       const roleKey = `${roleCode}:${assignment.user_id}`;

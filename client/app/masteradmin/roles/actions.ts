@@ -212,6 +212,7 @@ const ROLE_CODE_ORGANIZER_STUDENT = "ORGANIZER_STUDENT";
 const ROLE_CODE_ORGANIZER_VOLUNTEER = "ORGANIZER_VOLUNTEER";
 const ROLE_CODE_SUPPORT = "SUPPORT";
 const ROLE_CODE_FINANCE_OFFICER = "FINANCE_OFFICER";
+const ROLE_CODE_ACCOUNTS = "ACCOUNTS";
 const ROLE_CODE_SERVICE_IT = "SERVICE_IT";
 const ROLE_CODE_SERVICE_VENUE = "SERVICE_VENUE";
 const ROLE_CODE_SERVICE_CATERING = "SERVICE_CATERING";
@@ -266,6 +267,12 @@ type UniversityRoleKey =
   | null;
 
 type AssignmentFallback = {
+  is_masteradmin: boolean;
+  is_hod: boolean;
+  is_dean: boolean;
+  is_cfo: boolean;
+  is_finance_officer: boolean;
+  is_organiser: boolean;
   is_student_organiser: boolean;
   is_volunteer: boolean;
   is_support: boolean;
@@ -273,6 +280,9 @@ type AssignmentFallback = {
   is_it_service: boolean;
   is_catering_vendors: boolean;
   is_stalls_misc: boolean;
+  department_id: string | null;
+  school_id: string | null;
+  campus: string | null;
   venue_id: string | null;
 };
 
@@ -486,10 +496,14 @@ function readDetailCandidate(details: unknown, keys: string[]): string | null {
 function normalizeUserRecord(row: any, fallback?: AssignmentFallback): UserRoleRow {
   const role = normalizeUniversityRole(row?.university_role);
 
-  const isHod = Boolean(row?.is_hod) || role === "hod";
-  const isDean = Boolean(row?.is_dean) || role === "dean";
-  const isCfo = Boolean(row?.is_cfo) || role === "cfo";
-  const isFinance = Boolean(row?.is_finance_officer) || role === "finance_officer";
+  const isHod = Boolean(row?.is_hod) || role === "hod" || Boolean(fallback?.is_hod);
+  const isDean = Boolean(row?.is_dean) || role === "dean" || Boolean(fallback?.is_dean);
+  const isCfo = Boolean(row?.is_cfo) || role === "cfo" || Boolean(fallback?.is_cfo);
+  const isFinance =
+    Boolean(row?.is_finance_officer) ||
+    Boolean(row?.is_finance_office) ||
+    role === "finance_officer" ||
+    Boolean(fallback?.is_finance_officer);
 
   const isStudentOrganiser =
     readBooleanFlag(row, ["is_student_organiser", "is_student_organizer"]) ||
@@ -516,15 +530,21 @@ function normalizeUserRecord(row: any, fallback?: AssignmentFallback): UserRoleR
     readBooleanFlag(row, ["is_stalls_misc", "is_stall_misc", "is_stalls"]) ||
     Boolean(fallback?.is_stalls_misc);
 
-  const departmentId = isHod ? normalizeNullableText(row?.department_id) : null;
-  const schoolId = isDean ? normalizeNullableText(row?.school_id) : null;
-  const campus = isCfo ? normalizeNullableText(row?.campus) : null;
+  const departmentId = isHod
+    ? normalizeNullableText(row?.department_id) || fallback?.department_id || null
+    : null;
+  const schoolId = isDean
+    ? normalizeNullableText(row?.school_id) || fallback?.school_id || null
+    : null;
+  const campus = isCfo
+    ? normalizeNullableText(row?.campus) || fallback?.campus || null
+    : null;
   const venueId = isVenueManager
     ? normalizeNullableText(row?.venue_id) || fallback?.venue_id || null
     : null;
 
   const access: UserAccessPayload = {
-    is_organiser: Boolean(row?.is_organiser),
+    is_organiser: Boolean(row?.is_organiser) || Boolean(fallback?.is_organiser),
     is_student_organiser: isStudentOrganiser,
     is_volunteer: isVolunteer,
     is_support: isSupport,
@@ -536,7 +556,7 @@ function normalizeUserRecord(row: any, fallback?: AssignmentFallback): UserRoleR
     is_dean: isDean,
     is_cfo: isCfo,
     is_finance_officer: isFinance,
-    is_masteradmin: Boolean(row?.is_masteradmin) || role === "masteradmin",
+    is_masteradmin: Boolean(row?.is_masteradmin) || role === "masteradmin" || Boolean(fallback?.is_masteradmin),
     department_id: departmentId,
     school_id: schoolId,
     campus,
@@ -614,7 +634,13 @@ async function assertMasterAdmin() {
   }
 
   const actingRole = normalizeUniversityRole(actingUser.university_role);
-  if (!Boolean(actingUser.is_masteradmin) && actingRole !== "masteradmin") {
+  const hasMasterAdminAssignment = await hasActiveRoleAssignment(
+    adminClient,
+    actingUser.id,
+    [ROLE_CODE_MASTER_ADMIN]
+  );
+
+  if (!Boolean(actingUser.is_masteradmin) && actingRole !== "masteradmin" && !hasMasterAdminAssignment) {
     throw new Error("Master Admin privileges are required.");
   }
 
@@ -625,6 +651,32 @@ async function assertMasterAdmin() {
       email: String(actingUser.email || authUser.email || ""),
     },
   };
+}
+
+async function hasActiveRoleAssignment(
+  adminClient: any,
+  userId: string | number,
+  roleCodes: string[]
+): Promise<boolean> {
+  if (!roleCodes.length) {
+    return false;
+  }
+
+  const { data, error } = await adminClient
+    .from("user_role_assignments")
+    .select("role_code,is_active,valid_from,valid_until")
+    .eq("user_id", userId)
+    .in("role_code", roleCodes.map((code) => normalizeRoleCode(code)));
+
+  if (error) {
+    if (isMissingRelationError(error) || isMissingColumnError(error)) {
+      return false;
+    }
+
+    throw new Error(error.message || "Failed to verify role assignments.");
+  }
+
+  return (data || []).some((assignment: any) => isRoleAssignmentActive(assignment));
 }
 async function fetchRowsWithSelectFallback(adminClient: any, tableName: string, selectVariants: string[]) {
   for (const selectClause of selectVariants) {
@@ -767,9 +819,16 @@ async function fetchRoleAssignmentFallbacks(
     .from("user_role_assignments")
     .select("user_id,role_code,department_scope,campus_scope,is_active,valid_from,valid_until")
     .in("role_code", [
+      ROLE_CODE_MASTER_ADMIN,
+      ROLE_CODE_HOD,
+      ROLE_CODE_DEAN,
+      ROLE_CODE_CFO,
+      ROLE_CODE_ORGANIZER_TEACHER,
       ROLE_CODE_ORGANIZER_STUDENT,
       ROLE_CODE_ORGANIZER_VOLUNTEER,
       ROLE_CODE_SUPPORT,
+      ROLE_CODE_FINANCE_OFFICER,
+      ROLE_CODE_ACCOUNTS,
       ROLE_CODE_SERVICE_IT,
       ROLE_CODE_SERVICE_VENUE,
       ROLE_CODE_SERVICE_CATERING,
@@ -803,6 +862,12 @@ async function fetchRoleAssignmentFallbacks(
 
     if (!map.has(userId)) {
       map.set(userId, {
+        is_masteradmin: false,
+        is_hod: false,
+        is_dean: false,
+        is_cfo: false,
+        is_finance_officer: false,
+        is_organiser: false,
         is_student_organiser: false,
         is_volunteer: false,
         is_support: false,
@@ -810,6 +875,9 @@ async function fetchRoleAssignmentFallbacks(
         is_it_service: false,
         is_catering_vendors: false,
         is_stalls_misc: false,
+        department_id: null,
+        school_id: null,
+        campus: null,
         venue_id: null,
       });
     }
@@ -821,12 +889,44 @@ async function fetchRoleAssignmentFallbacks(
       entry.is_student_organiser = true;
     }
 
+    if (roleCode === ROLE_CODE_MASTER_ADMIN) {
+      entry.is_masteradmin = true;
+    }
+
+    if (roleCode === ROLE_CODE_HOD) {
+      entry.is_hod = true;
+      entry.department_id = normalizeNullableText(row.department_scope) || entry.department_id;
+      entry.campus = normalizeNullableText(row.campus_scope) || entry.campus;
+    }
+
+    if (roleCode === ROLE_CODE_DEAN) {
+      entry.is_dean = true;
+      entry.school_id = normalizeNullableText(row.department_scope) || entry.school_id;
+      entry.campus = normalizeNullableText(row.campus_scope) || entry.campus;
+    }
+
+    if (roleCode === ROLE_CODE_CFO) {
+      entry.is_cfo = true;
+      entry.campus =
+        normalizeNullableText(row.campus_scope) ||
+        normalizeNullableText(row.department_scope) ||
+        entry.campus;
+    }
+
+    if (roleCode === ROLE_CODE_ORGANIZER_TEACHER) {
+      entry.is_organiser = true;
+    }
+
     if (roleCode === ROLE_CODE_ORGANIZER_VOLUNTEER) {
       entry.is_volunteer = true;
     }
 
     if (roleCode === ROLE_CODE_SUPPORT) {
       entry.is_support = true;
+    }
+
+    if (roleCode === ROLE_CODE_FINANCE_OFFICER || roleCode === ROLE_CODE_ACCOUNTS) {
+      entry.is_finance_officer = true;
     }
 
     if (roleCode === ROLE_CODE_SERVICE_IT) {
@@ -1506,6 +1606,29 @@ export async function updateUserAccess(
         roleCode: ROLE_CODE_MASTER_ADMIN,
         enabled: payload.is_masteradmin,
         assignedBy: actingUser.email,
+      }),
+      syncRoleAssignment(adminClient, {
+        userId: targetUserId,
+        roleCode: ROLE_CODE_HOD,
+        enabled: payload.is_hod,
+        assignedBy: actingUser.email,
+        departmentScope: strictDepartmentId,
+        campusScope: payload.campus,
+      }),
+      syncRoleAssignment(adminClient, {
+        userId: targetUserId,
+        roleCode: ROLE_CODE_DEAN,
+        enabled: payload.is_dean,
+        assignedBy: actingUser.email,
+        departmentScope: strictSchoolId,
+        campusScope: payload.campus,
+      }),
+      syncRoleAssignment(adminClient, {
+        userId: targetUserId,
+        roleCode: ROLE_CODE_CFO,
+        enabled: payload.is_cfo,
+        assignedBy: actingUser.email,
+        campusScope: strictCampus,
       }),
       syncRoleAssignment(adminClient, {
         userId: targetUserId,
