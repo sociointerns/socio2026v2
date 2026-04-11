@@ -358,9 +358,27 @@ function isMissingColumnError(error: { message?: string | null; details?: string
   );
 }
 
-function isMissingRelationError(error: { message?: string | null; details?: string | null }): boolean {
-  const text = `${error?.message || ""} ${error?.details || ""}`.toLowerCase();
-  return text.includes("relation") && text.includes("does not exist");
+function isMissingRelationError(error: {
+  message?: string | null;
+  details?: string | null;
+  hint?: string | null;
+  code?: string | null;
+}): boolean {
+  const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""}`.toLowerCase();
+
+  if (text.includes("relation") && text.includes("does not exist")) {
+    return true;
+  }
+
+  if (text.includes("could not find the table") && text.includes("schema cache")) {
+    return true;
+  }
+
+  if ((error?.code || "").toUpperCase() === "PGRST205") {
+    return true;
+  }
+
+  return false;
 }
 
 function normalizeRoleCode(value: unknown): string {
